@@ -1,0 +1,357 @@
+---
+title: Skills Integration
+sidebar_position: 1
+---
+
+# Skills Integration
+
+Agent Skills integrates seamlessly with Pydantic AI agents via `DatalayerSkillsToolset`.
+
+## Overview
+
+The `DatalayerSkillsToolset` exposes skills as tools that AI agents can use:
+
+- `list_skills()` - List available skills
+- `load_skill(skill_name)` - Get full skill instructions
+- `read_skill_resource(skill_name, resource_name)` - Read skill resources
+- `run_skill_script(skill_name, script_name, args)` - Execute skill scripts
+
+When used with Pydantic AI's `get_instructions()` hook, the toolset injects
+an XML listing of available skills into the system prompt to support
+progressive disclosure:
+
+```text
+<skills>
+You have access to skills that extend your capabilities.
+Skills are modular packages with instructions, resources, and scripts.
+
+<available_skills>
+<skill name="data-analyzer" description="Analyzes datasets" location="/path/to/skills/data-analyzer" />
+</available_skills>
+
+<usage>
+1. Use load_skill(skill_name) to read full instructions
+2. Use read_skill_resource(skill_name, resource) for docs
+3. Use run_skill_script(skill_name, script, args) to execute
+</usage>
+</skills>
+```
+
+## Basic Setup
+
+```python
+from pydantic_ai import Agent
+from agent_skills import DatalayerSkillsToolset, SandboxExecutor
+from code_sandboxes import LocalEvalSandbox
+
+# Create sandbox for execution
+sandbox = LocalEvalSandbox()
+
+# Create toolset
+toolset = DatalayerSkillsToolset(
+    directories=["./skills"],
+    executor=SandboxExecutor(sandbox),
+)
+
+# Create agent with toolset
+agent = Agent(
+    model='openai:gpt-4o',
+    toolsets=[toolset],
+)
+
+# Run the agent
+result = await agent.run("List all available skills")
+print(result.output)
+```
+
+## Toolset Configuration
+
+```python
+toolset = DatalayerSkillsToolset(
+    directories=["./skills", "./shared-skills"],  # Multiple directories
+    executor=SandboxExecutor(sandbox),             # Execution backend
+    include_resources=True,                        # Enable resource access
+    include_scripts=True,                          # Enable script execution
+)
+```
+
+### Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `directories` | `list[str]` | Required | Directories containing skills |
+| `executor` | `Executor` | Required | Execution backend |
+| `include_resources` | `bool` | `True` | Enable `read_skill_resource` tool |
+| `include_scripts` | `bool` | `True` | Enable `run_skill_script` tool |
+
+## Available Tools
+
+### list_skills
+
+Lists all available skills:
+
+```python
+# Agent calls: list_skills()
+# Returns:
+[
+    {
+        "name": "data-analyzer",
+        "description": "Analyzes datasets and provides insights",
+        "tags": ["data", "analysis"]
+    },
+    {
+        "name": "file-processor",
+        "description": "Process files in batches",
+        "tags": ["files", "batch"]
+    }
+]
+```
+
+### load_skill
+
+Load full instructions for a skill:
+
+```python
+# Agent calls: load_skill(skill_name="data-analyzer")
+# Returns:
+{
+    "name": "data-analyzer",
+    "description": "Analyzes datasets and provides insights",
+    "content": "# Data Analyzer\n\nUse this skill to analyze...",
+    "scripts": ["analyze", "summarize"],
+    "resources": ["reference", "examples"]
+}
+```
+
+### read_skill_resource
+
+Read a skill's resource:
+
+```python
+# Agent calls: read_skill_resource(skill_name="data-analyzer", resource_name="reference")
+# Returns:
+"Reference documentation for the data analyzer..."
+```
+
+### run_skill_script
+
+Execute a skill script:
+
+```python
+# Agent calls: run_skill_script(
+#     skill_name="data-analyzer",
+#     script_name="analyze",
+#     args={"file_path": "/data/sales.csv"}
+# )
+# Returns:
+{
+    "success": True,
+    "output": "Analysis complete. Found 1000 rows...",
+    "result": {"rows": 1000, "columns": 5}
+}
+```
+
+## Programmatic Skills
+
+Define skills in code with decorators:
+
+```python
+from agent_skills import DatalayerSkill
+
+# Create a skill
+skill = DatalayerSkill(
+    name="data-analyzer",
+    description="Analyzes datasets and provides insights",
+    content="Use this skill to analyze CSV and JSON data files.",
+)
+
+# Add a script
+@skill.script
+async def analyze(ctx, file_path: str) -> dict:
+    """Analyze a data file.
+    
+    Args:
+        file_path: Path to the file to analyze.
+    
+    Returns:
+        Analysis results.
+    """
+    data = await ctx.deps.filesystem.read(file_path)
+    lines = data.strip().split('\n')
+    return {
+        "rows": len(lines),
+        "size": len(data),
+    }
+
+# Add a resource
+@skill.resource
+def get_reference() -> str:
+    """Get reference documentation."""
+    return """
+    # Data Analyzer Reference
+    
+    Supported formats:
+    - CSV files
+    - JSON files
+    - TSV files
+    """
+
+# Register with toolset
+toolset = DatalayerSkillsToolset(
+    skills=[skill],
+    executor=SandboxExecutor(sandbox),
+)
+```
+
+## Agent Workflow
+
+A typical workflow for an agent using skills:
+
+```python
+agent = Agent(
+    model='openai:gpt-4o',
+    system_prompt="""You are a helpful assistant with access to skills.
+
+When given a task:
+1. Use list_skills() to see available skills
+2. Use load_skill(name) to get detailed instructions
+3. Use run_skill_script(name, script, args) to execute
+
+Skills are pre-built capabilities that can help you accomplish tasks efficiently.
+""",
+    toolsets=[toolset],
+)
+
+# The agent will:
+# 1. List skills to find relevant ones
+# 2. Load skill instructions to understand usage
+# 3. Execute skill scripts with appropriate arguments
+result = await agent.run("Analyze the sales data in /data/sales.csv")
+```
+
+## Execution Backends
+
+### LocalEvalSandbox
+
+Execute skills locally using Python eval:
+
+```python
+from code_sandboxes import LocalEvalSandbox
+from agent_skills import SandboxExecutor
+
+sandbox = LocalEvalSandbox()
+executor = SandboxExecutor(sandbox)
+```
+
+### DatalayerRuntimeSandbox
+
+Execute skills in cloud-based Datalayer Runtime:
+
+```python
+from code_sandboxes import DatalayerRuntimeSandbox
+from agent_skills import SandboxExecutor
+
+sandbox = DatalayerRuntimeSandbox(
+    api_key="...",
+    runtime_id="...",
+)
+executor = SandboxExecutor(sandbox)
+```
+
+### Custom Executor
+
+Implement your own executor:
+
+```python
+from agent_skills import Executor
+
+class MyExecutor(Executor):
+    async def execute(
+        self,
+        skill: Skill,
+        script_name: str,
+        args: dict,
+    ) -> ExecutionResult:
+        # Your execution logic
+        ...
+```
+
+## Error Handling
+
+```python
+result = await agent.run("Run the broken skill")
+
+# The agent sees errors and can respond appropriately:
+# "The skill execution failed with error: ..."
+```
+
+Skill execution errors are returned as tool results, allowing the agent to:
+- Retry with different parameters
+- Try alternative skills
+- Report the error to the user
+
+## Dependencies Injection
+
+Skills can access dependencies via context:
+
+```python
+@skill.script
+async def process(ctx, path: str) -> str:
+    """Process a file using injected dependencies.
+    
+    Args:
+        path: File path to process.
+    
+    Returns:
+        Processing result.
+    """
+    # Access filesystem dependency
+    content = await ctx.deps.filesystem.read(path)
+    
+    # Access database dependency
+    await ctx.deps.database.insert({"path": path, "content": content})
+    
+    return f"Processed {path}"
+```
+
+Configure dependencies in the toolset:
+
+```python
+toolset = DatalayerSkillsToolset(
+    skills=[skill],
+    executor=executor,
+    deps={
+        "filesystem": FilesystemDep(),
+        "database": DatabaseDep(),
+    },
+)
+```
+
+## Combining with Other Toolsets
+
+Use skills alongside other toolsets:
+
+```python
+from pydantic_ai import Agent
+from pydantic_ai_slim.pydantic_ai.mcp import MCPServerStdio
+from agent_skills import DatalayerSkillsToolset
+
+# Skills toolset
+skills_toolset = DatalayerSkillsToolset(
+    directories=["./skills"],
+    executor=executor,
+)
+
+# Direct MCP server access
+filesystem_server = MCPServerStdio(
+    "npx",
+    args=["-y", "@anthropic/mcp-server-filesystem", "/tmp"],
+)
+
+# Agent has both
+agent = Agent(
+    model='openai:gpt-4o',
+    system_prompt="Use skills for complex tasks, direct tools for simple operations.",
+    toolsets=[skills_toolset, filesystem_server],
+)
+```

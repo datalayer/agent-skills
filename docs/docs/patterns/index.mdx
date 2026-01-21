@@ -1,0 +1,463 @@
+---
+title: Skills Patterns
+sidebar_position: 1
+---
+
+# Skills Patterns
+
+Best practices and patterns for creating effective agent skills.
+
+## Skill Design Principles
+
+### 1. Single Responsibility
+
+Each skill should do one thing well:
+
+```python
+# Good: Focused skill
+async def count_words(path: str) -> int:
+    """Count words in a file."""
+    from generated.servers.filesystem import read_file
+    content = await read_file({"path": path})
+    return len(content.split())
+
+# Avoid: Too many responsibilities
+async def analyze_everything(path: str) -> dict:
+    """Count words, lines, chars, find patterns, summarize, translate..."""
+    ...
+```
+
+### 2. Clear Documentation
+
+Always include comprehensive docstrings:
+
+```python
+async def process_csv(
+    input_path: str,
+    output_path: str,
+    transform: str = "uppercase",
+) -> dict:
+    """Process a CSV file and save the result.
+    
+    Reads a CSV file, applies a transformation to all text fields,
+    and writes the result to a new file.
+    
+    Args:
+        input_path: Path to the input CSV file.
+        output_path: Path where the processed CSV will be saved.
+        transform: Transformation to apply. Options:
+            - "uppercase": Convert to uppercase
+            - "lowercase": Convert to lowercase
+            - "title": Convert to title case
+    
+    Returns:
+        Dictionary with:
+        - rows_processed: Number of rows processed
+        - output_path: Path to the output file
+    
+    Raises:
+        FileNotFoundError: If input file doesn't exist.
+        ValueError: If transform is not recognized.
+    
+    Example:
+        result = await process_csv(
+            "/data/input.csv",
+            "/data/output.csv",
+            transform="uppercase"
+        )
+        print(f"Processed {result['rows_processed']} rows")
+    """
+    ...
+```
+
+### 3. Type Hints
+
+Use type hints for clarity and validation:
+
+```python
+from typing import Optional
+
+async def search_files(
+    directory: str,
+    pattern: str,
+    recursive: bool = True,
+    max_results: Optional[int] = None,
+) -> list[dict[str, str]]:
+    """Search for files matching a pattern.
+    
+    Returns:
+        List of dicts with 'path' and 'name' keys.
+    """
+    ...
+```
+
+## Composition Patterns
+
+### Sequential Composition
+
+Chain skills for multi-step workflows:
+
+```python
+# skills/data_pipeline.py
+"""Data processing pipeline."""
+
+async def run_pipeline(input_dir: str, output_dir: str) -> dict:
+    """Run the complete data pipeline.
+    
+    Steps:
+    1. Validate input files
+    2. Transform data
+    3. Generate report
+    """
+    from skills.validation import validate_files
+    from skills.transform import transform_data
+    from skills.reporting import generate_report
+    
+    # Step 1: Validate
+    validation = await validate_files(input_dir)
+    if not validation["valid"]:
+        return {"success": False, "error": validation["error"]}
+    
+    # Step 2: Transform
+    transform_result = await transform_data(input_dir, output_dir)
+    
+    # Step 3: Report
+    report = await generate_report(output_dir)
+    
+    return {
+        "success": True,
+        "files_processed": transform_result["count"],
+        "report_path": report["path"],
+    }
+```
+
+### Parallel Composition
+
+Use `asyncio.gather` for concurrent operations:
+
+```python
+# skills/batch_processor.py
+"""Batch file processing."""
+
+import asyncio
+
+async def process_batch(paths: list[str]) -> dict:
+    """Process multiple files in parallel.
+    
+    Args:
+        paths: List of file paths to process.
+    
+    Returns:
+        Results for each file.
+    """
+    from skills.file_processor import process_file
+    
+    # Process all files in parallel
+    results = await asyncio.gather(
+        *[process_file(path) for path in paths],
+        return_exceptions=True
+    )
+    
+    successes = []
+    failures = []
+    
+    for path, result in zip(paths, results):
+        if isinstance(result, Exception):
+            failures.append({"path": path, "error": str(result)})
+        else:
+            successes.append({"path": path, "result": result})
+    
+    return {
+        "total": len(paths),
+        "successes": successes,
+        "failures": failures,
+    }
+```
+
+### Conditional Composition
+
+Branch based on conditions:
+
+```python
+# skills/smart_processor.py
+"""Smart file processor that adapts to file type."""
+
+async def smart_process(path: str) -> dict:
+    """Process a file based on its type.
+    
+    Args:
+        path: File path to process.
+    
+    Returns:
+        Processing result.
+    """
+    from skills.csv_processor import process_csv
+    from skills.json_processor import process_json
+    from skills.text_processor import process_text
+    
+    if path.endswith(".csv"):
+        return await process_csv(path)
+    elif path.endswith(".json"):
+        return await process_json(path)
+    else:
+        return await process_text(path)
+```
+
+## Error Handling Patterns
+
+### Graceful Degradation
+
+Handle errors without failing completely:
+
+```python
+async def resilient_batch(paths: list[str]) -> dict:
+    """Process files with error resilience.
+    
+    Continues processing even if some files fail.
+    """
+    from generated.servers.filesystem import read_file
+    
+    results = []
+    
+    for path in paths:
+        try:
+            content = await read_file({"path": path})
+            results.append({
+                "path": path,
+                "status": "success",
+                "size": len(content),
+            })
+        except Exception as e:
+            results.append({
+                "path": path,
+                "status": "failed",
+                "error": str(e),
+            })
+    
+    return {
+        "total": len(paths),
+        "successful": len([r for r in results if r["status"] == "success"]),
+        "results": results,
+    }
+```
+
+### Retry Logic
+
+Retry failed operations:
+
+```python
+import asyncio
+
+async def with_retry(
+    func,
+    args: dict,
+    max_retries: int = 3,
+    delay: float = 1.0,
+) -> any:
+    """Execute a function with retry logic.
+    
+    Args:
+        func: Async function to execute.
+        args: Arguments to pass.
+        max_retries: Maximum retry attempts.
+        delay: Delay between retries in seconds.
+    
+    Returns:
+        Function result.
+    
+    Raises:
+        Exception: If all retries fail.
+    """
+    last_error = None
+    
+    for attempt in range(max_retries):
+        try:
+            return await func(**args)
+        except Exception as e:
+            last_error = e
+            if attempt < max_retries - 1:
+                await asyncio.sleep(delay * (attempt + 1))
+    
+    raise last_error
+```
+
+### Validation
+
+Validate inputs before processing:
+
+```python
+async def validated_process(
+    path: str,
+    options: dict,
+) -> dict:
+    """Process with input validation.
+    
+    Args:
+        path: File path (must exist).
+        options: Processing options.
+    
+    Returns:
+        Processing result.
+    
+    Raises:
+        ValueError: If inputs are invalid.
+    """
+    from generated.servers.filesystem import file_exists
+    
+    # Validate path
+    if not path:
+        raise ValueError("Path cannot be empty")
+    
+    if not await file_exists({"path": path}):
+        raise ValueError(f"File not found: {path}")
+    
+    # Validate options
+    valid_modes = ["fast", "accurate", "balanced"]
+    if options.get("mode") and options["mode"] not in valid_modes:
+        raise ValueError(f"Invalid mode. Must be one of: {valid_modes}")
+    
+    # Process
+    return await _do_process(path, options)
+```
+
+## Logging and Progress
+
+### Progress Reporting
+
+Report progress for long-running skills:
+
+```python
+async def long_running_task(items: list[str]) -> dict:
+    """Process many items with progress reporting.
+    
+    Args:
+        items: Items to process.
+    
+    Returns:
+        Processing results.
+    """
+    total = len(items)
+    processed = 0
+    
+    print(f"Starting processing of {total} items...")
+    
+    for i, item in enumerate(items):
+        if i % 10 == 0:
+            progress = (i / total) * 100
+            print(f"Progress: {i}/{total} ({progress:.1f}%)")
+        
+        await process_item(item)
+        processed += 1
+    
+    print(f"Complete! Processed {processed} items.")
+    
+    return {"processed": processed}
+```
+
+### Structured Logging
+
+Use structured output for machine parsing:
+
+```python
+import json
+
+async def logged_process(path: str) -> dict:
+    """Process with structured logging.
+    
+    Outputs JSON log lines for easy parsing.
+    """
+    def log(event: str, **data):
+        print(json.dumps({"event": event, **data}))
+    
+    log("start", path=path)
+    
+    try:
+        result = await do_process(path)
+        log("success", path=path, result=result)
+        return result
+    except Exception as e:
+        log("error", path=path, error=str(e))
+        raise
+```
+
+## Testing Patterns
+
+### Unit Testing Skills
+
+```python
+# tests/test_skills.py
+import pytest
+from skills.word_counter import count_words
+
+@pytest.mark.asyncio
+async def test_count_words():
+    """Test word counting skill."""
+    # Create test file
+    with open("/tmp/test.txt", "w") as f:
+        f.write("one two three")
+    
+    result = await count_words("/tmp/test.txt")
+    assert result == 3
+
+@pytest.mark.asyncio
+async def test_count_words_empty():
+    """Test with empty file."""
+    with open("/tmp/empty.txt", "w") as f:
+        f.write("")
+    
+    result = await count_words("/tmp/empty.txt")
+    assert result == 0
+```
+
+### Mocking MCP Tools
+
+```python
+from unittest.mock import AsyncMock, patch
+
+@pytest.mark.asyncio
+async def test_with_mocked_tools():
+    """Test skill with mocked MCP tools."""
+    mock_read = AsyncMock(return_value="hello world")
+    
+    with patch("generated.servers.filesystem.read_file", mock_read):
+        result = await count_words("/any/path")
+        
+    assert result == 2
+    mock_read.assert_called_once_with({"path": "/any/path"})
+```
+
+## Skill Organization
+
+### Directory Structure
+
+```
+skills/
+├── __init__.py
+├── core/                    # Core utilities
+│   ├── __init__.py
+│   ├── validation.py
+│   └── logging.py
+├── data/                    # Data processing skills
+│   ├── __init__.py
+│   ├── csv_processor.py
+│   ├── json_processor.py
+│   └── transform.py
+├── files/                   # File operation skills
+│   ├── __init__.py
+│   ├── backup.py
+│   ├── search.py
+│   └── sync.py
+└── web/                     # Web-related skills
+    ├── __init__.py
+    ├── fetch.py
+    └── scrape.py
+```
+
+### Naming Conventions
+
+| Type | Convention | Example |
+|------|------------|---------|
+| Skill files | `snake_case.py` | `data_processor.py` |
+| Skill functions | `snake_case` | `process_data()` |
+| SKILL.md files | `kebab-case.skill.md` | `data-processor.skill.md` |
+| Skill names | `kebab-case` | `"data-processor"` |

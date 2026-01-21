@@ -1,0 +1,345 @@
+---
+title: Skills Manager
+sidebar_position: 1
+---
+
+# Skills Manager
+
+The `SkillsManager` provides full lifecycle management for agent skills, with an API compatible with Anthropic's Skills API.
+
+## Overview
+
+```python
+from agent_skills import SkillsManager
+
+manager = SkillsManager("./skills")
+
+# CRUD operations
+skill = manager.create(name="...", description="...", content="...")
+skill = manager.retrieve(skill_id)
+skill = manager.update(skill_id, description="New description")
+manager.delete(skill_id)
+
+# Discovery and search
+skills = manager.discover()
+matches = manager.search("data processing")
+
+# Execution
+result = await manager.execute(skill, {"param": "value"})
+```
+
+## Initialization
+
+```python
+from agent_skills import SkillsManager
+
+manager = SkillsManager(
+    skills_path="./skills",       # Directory for skill storage
+    sandbox_variant="local-eval", # Sandbox type for execution
+)
+```
+
+### Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `skills_path` | `str` | `"./skills"` | Directory for skill files |
+| `sandbox_variant` | `str` | `"local-eval"` | Sandbox for code execution |
+
+## CRUD Operations
+
+### Create
+
+Create a new skill:
+
+```python
+skill = manager.create(
+    name="data_processor",
+    description="Process data files",
+    content="# Data Processor\n\nProcess CSV and JSON files.",
+    python_code='''
+async def process(path: str) -> dict:
+    """Process a data file."""
+    from generated.servers.filesystem import read_file
+    content = await read_file({"path": path})
+    return {"size": len(content)}
+''',
+    allowed_tools=["filesystem__read_file", "filesystem__write_file"],
+    tags=["data", "processing"],
+)
+
+print(skill.skill_id)  # "550e8400-e29b-41d4-a716-446655440000"
+```
+
+### Retrieve
+
+Get a skill by ID:
+
+```python
+skill = manager.retrieve("550e8400-e29b-41d4-a716-446655440000")
+
+if skill:
+    print(skill.name)
+    print(skill.description)
+```
+
+### Get by Name
+
+Get a skill by name:
+
+```python
+skill = manager.get("data_processor")
+
+if skill:
+    print(skill.skill_id)
+```
+
+### Update
+
+Update an existing skill:
+
+```python
+skill = manager.update(
+    skill_id="550e8400-e29b-41d4-a716-446655440000",
+    description="Updated description",
+    tags=["data", "processing", "csv"],
+)
+```
+
+### Delete
+
+Delete a skill:
+
+```python
+success = manager.delete("550e8400-e29b-41d4-a716-446655440000")
+print(success)  # True
+```
+
+### List
+
+List all skills with optional filters:
+
+```python
+# List all
+all_skills = manager.list()
+
+# Filter by tags
+data_skills = manager.list(tags=["data"])
+
+# Filter by status
+active_skills = manager.list(status=SkillStatus.ACTIVE)
+
+# Limit results
+top_skills = manager.list(limit=10)
+```
+
+## Discovery
+
+### Discover from Directory
+
+Scan the skills directory for skill files:
+
+```python
+skills = manager.discover()
+
+for skill in skills:
+    print(f"{skill.name}: {skill.description}")
+    print(f"  Tags: {skill.metadata.tags}")
+    print(f"  Tools: {skill.metadata.allowed_tools}")
+```
+
+Supports:
+- Python files (`*.py`)
+- SKILL.md files (`*.skill.md`)
+
+### Search
+
+Search skills by query:
+
+```python
+matches = manager.search("data processing")
+
+for match in matches:
+    print(f"{match.skill.name} (score: {match.score})")
+    print(f"  {match.skill.description}")
+```
+
+Search looks at:
+- Skill name
+- Description
+- Tags
+- Content
+
+## Execution
+
+Execute a skill with parameters:
+
+```python
+skill = manager.get("data_processor")
+
+result = await manager.execute(
+    skill,
+    parameters={"path": "/data/input.csv"},
+)
+
+print(result.success)    # True
+print(result.output)     # Execution output
+print(result.error)      # None (or error message)
+print(result.duration)   # Execution time
+```
+
+### Execution Result
+
+The `SkillExecution` result contains:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | `bool` | Whether execution succeeded |
+| `output` | `str` | stdout from execution |
+| `return_value` | `Any` | Return value from the skill function |
+| `error` | `str | None` | Error message if failed |
+| `duration` | `float` | Execution time in seconds |
+| `tool_calls` | `list` | MCP tool calls made |
+
+### Error Handling
+
+```python
+result = await manager.execute(skill, {"path": "/invalid"})
+
+if not result.success:
+    print(f"Execution failed: {result.error}")
+else:
+    print(f"Result: {result.return_value}")
+```
+
+## Versioning
+
+Skills support versioning for tracking changes:
+
+### Create Version
+
+```python
+version = manager.create_version(
+    skill_id="550e8400-e29b-41d4-a716-446655440000",
+    message="Added error handling",
+)
+
+print(version.version_id)
+print(version.created_at)
+```
+
+### List Versions
+
+```python
+versions = manager.list_versions("550e8400-e29b-41d4-a716-446655440000")
+
+for v in versions:
+    print(f"v{v.version_number}: {v.message} ({v.created_at})")
+```
+
+### Restore Version
+
+```python
+skill = manager.restore_version(
+    skill_id="550e8400-e29b-41d4-a716-446655440000",
+    version_id="version-uuid",
+)
+```
+
+## File Storage
+
+Skills are stored as files in the skills directory:
+
+```
+skills/
+├── 550e8400-e29b-41d4-a716-446655440000.skill.md
+├── data_processor.py
+└── versions/
+    └── 550e8400-e29b-41d4-a716-446655440000/
+        ├── v1.skill.md
+        └── v2.skill.md
+```
+
+### Skill File Format
+
+Python files are parsed for functions and docstrings:
+
+```python
+# skills/example.py
+"""Example skill for processing data."""
+
+async def main_function(input: str) -> str:
+    """The main entry point.
+    
+    Args:
+        input: Input data.
+    
+    Returns:
+        Processed output.
+    """
+    return input.upper()
+```
+
+SKILL.md files include metadata:
+
+```markdown
+---
+name: example
+description: Example skill for processing data
+version: 1.0.0
+tags: [example, data]
+---
+
+# Example Skill
+
+Instructions for using this skill...
+```
+
+## Context Modes
+
+Skills can run in different execution contexts:
+
+```python
+from agent_skills import SkillContext
+
+# Fork mode (default) - isolated execution
+skill = manager.create(
+    name="isolated_skill",
+    context=SkillContext.FORK,
+    ...
+)
+
+# Inline mode - runs in current context
+skill = manager.create(
+    name="inline_skill",
+    context=SkillContext.INLINE,
+    ...
+)
+
+# Sandbox mode - runs in code sandbox
+skill = manager.create(
+    name="sandboxed_skill",
+    context=SkillContext.SANDBOX,
+    ...
+)
+```
+
+## Lifecycle Hooks
+
+Skills can define lifecycle hooks:
+
+```python
+from agent_skills import SkillHooks
+
+hooks = SkillHooks(
+    before_invoke="echo 'Starting skill...'",
+    after_invoke="echo 'Skill complete!'",
+    on_error="echo 'Skill failed!'",
+)
+
+skill = manager.create(
+    name="hooked_skill",
+    hooks=hooks,
+    ...
+)
+```

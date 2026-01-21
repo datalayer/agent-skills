@@ -1,0 +1,191 @@
+---
+title: Getting Started
+sidebar_position: 1
+---
+
+# Getting Started
+
+This guide walks you through installing Agent Skills and creating your first skill.
+
+If you are using agent-codemode, it consumes skills from this package, so you should import skill utilities from `agent_skills`.
+
+## Installation
+
+```bash
+pip install agent-skills
+```
+
+For development with PydanticAI integration:
+
+```bash
+pip install agent-skills code-sandboxes
+```
+
+## Project Structure
+
+A typical skills project looks like:
+
+```
+my-agent/
+├── skills/
+│   ├── data_analyzer.py
+│   ├── file_processor.py
+│   └── web_scraper.py
+├── agent.py
+└── pyproject.toml
+```
+
+## Creating Your First Skill
+
+### As a Python File
+
+Create a file `skills/hello_world.py`:
+
+```python
+"""A simple greeting skill."""
+
+async def greet(name: str = "World") -> str:
+    """Greet someone by name.
+    
+    Args:
+        name: The name to greet.
+    
+    Returns:
+        A greeting message.
+    """
+    return f"Hello, {name}!"
+
+
+async def greet_many(names: list[str]) -> list[str]:
+    """Greet multiple people.
+    
+    Args:
+        names: List of names to greet.
+    
+    Returns:
+        List of greeting messages.
+    """
+    return [f"Hello, {name}!" for name in names]
+```
+
+### Using the Skill Manager
+
+```python
+from agent_skills import SkillsManager
+
+# Initialize manager pointing to skills directory
+manager = SkillsManager("./skills")
+
+# Discover all skills in the directory
+skills = manager.discover()
+print(f"Found {len(skills)} skills")
+
+for skill in skills:
+    print(f"  - {skill.name}: {skill.description}")
+```
+
+### Executing Skills
+
+```python
+# Get a specific skill
+skill = manager.get("hello_world")
+
+# Execute with parameters
+result = await manager.execute(skill, {"name": "Agent"})
+print(result.output)  # "Hello, Agent!"
+```
+
+## Skills with MCP Tools
+
+Skills become powerful when they compose MCP tools:
+
+```python
+# skills/file_analyzer.py
+"""Analyze files in a directory."""
+
+async def analyze_directory(path: str) -> dict:
+    """Analyze all files in a directory.
+    
+    Args:
+        path: Directory path to analyze.
+    
+    Returns:
+        Analysis results with file counts and sizes.
+    """
+    from generated.servers.filesystem import list_directory, read_file
+    
+    entries = await list_directory({"path": path})
+    
+    results = {
+        "total_files": 0,
+        "total_size": 0,
+        "by_extension": {},
+    }
+    
+    for entry in entries["entries"]:
+        if not entry.endswith("/"):  # Skip directories
+            results["total_files"] += 1
+            
+            content = await read_file({"path": f"{path}/{entry}"})
+            results["total_size"] += len(content)
+            
+            ext = entry.rsplit(".", 1)[-1] if "." in entry else "none"
+            results["by_extension"][ext] = results["by_extension"].get(ext, 0) + 1
+    
+    return results
+```
+
+## SKILL.md Format
+
+For richer skills with metadata, use the SKILL.md format:
+
+```markdown
+---
+name: file-analyzer
+description: Analyze files in a directory
+version: 1.0.0
+allowed-tools: filesystem__list_directory filesystem__read_file
+denied-tools: network__fetch
+license: Apache-2.0
+compatibility: Requires git and access to the internet
+metadata:
+    author: example-org
+    version: "1.0"
+tags:
+  - files
+  - analysis
+---
+
+# File Analyzer
+
+Analyzes files in a directory and provides statistics.
+
+## Usage
+
+Call `analyze_directory(path)` with a directory path.
+
+## Example
+
+```python
+result = await analyze_directory("/workspace")
+print(f"Found {result['total_files']} files")
+```
+```
+
+Load SKILL.md files:
+
+```python
+from agent_skills import Skill
+
+with open("skills/file_analyzer.skill.md") as f:
+    skill = Skill.from_skill_md(f.read())
+
+print(skill.name)  # "file-analyzer"
+print(skill.metadata.allowed_tools)  # ["filesystem__list_directory", ...]
+```
+
+## Next Steps
+
+- [Skills Manager](../manager/) - Full lifecycle management
+- [Integration](../integration/) - Use skills with AI agents
+- [Skill Patterns](../patterns/) - Best practices and patterns

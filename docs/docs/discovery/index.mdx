@@ -1,0 +1,372 @@
+---
+title: Skills Discovery
+sidebar_position: 1
+---
+
+# Skills Discovery
+
+Agent Skills provides comprehensive discovery mechanisms for AI agents to find and use relevant skills.
+
+## The Discovery Challenge
+
+When you have many skills available, agents need efficient ways to:
+
+- **Find relevant skills** - Without loading all skill content upfront
+- **Understand capabilities** - Know what each skill can do
+- **Choose the right skill** - Select the best skill for the task
+
+## Discovery Methods
+
+### Directory-Based Discovery
+
+The `SkillsManager` discovers skills from directories:
+
+```python
+from agent_skills import SkillsManager
+
+manager = SkillsManager("./skills")
+
+# Discover all skills in the directory
+skills = manager.discover()
+
+for skill in skills:
+    print(f"{skill.name}: {skill.description}")
+    print(f"  Tags: {skill.metadata.tags}")
+    print(f"  Status: {skill.status}")
+```
+
+### Supported Formats
+
+The manager discovers skills in multiple formats:
+
+| Format | Extension | Description |
+|--------|-----------|-------------|
+| Python | `*.py` | Python files with async functions |
+| SKILL.md | `*.skill.md` | Markdown with YAML frontmatter |
+
+### Directory Structure
+
+```
+skills/
+├── data/
+│   ├── csv_processor.py
+│   ├── json_processor.py
+│   └── transform.py
+├── files/
+│   ├── backup.py
+│   └── search.py
+└── utilities/
+    ├── validation.skill.md
+    └── logging.skill.md
+```
+
+All nested directories are scanned recursively.
+
+## Skill Search
+
+### Basic Search
+
+Search skills by natural language query:
+
+```python
+matches = manager.search("data processing")
+
+for match in matches:
+    print(f"{match.skill.name} (score: {match.score:.2f})")
+    print(f"  {match.skill.description}")
+```
+
+### Search Parameters
+
+```python
+matches = manager.search(
+    query="file operations",   # Natural language query
+    tags=["files"],            # Filter by tags
+    limit=10,                  # Maximum results
+)
+```
+
+### Search Results
+
+```python
+class SkillSearchResult:
+    skill: Skill          # The matched skill
+    score: float          # Relevance score (0-1)
+    matched_on: list[str] # Fields that matched (name, description, tags, content)
+```
+
+### What Gets Searched
+
+The search looks at:
+
+- **Skill name** - Exact and partial matches
+- **Description** - Semantic matching
+- **Tags** - Category filtering
+- **Content** - Full-text search in skill body
+
+## Agent Discovery via Toolset
+
+When using `DatalayerSkillsToolset`, agents have discovery tools:
+
+### list_skills
+
+Lists all available skills with summaries:
+
+```python
+# Agent calls: list_skills()
+# Returns:
+[
+    {
+        "name": "data-analyzer",
+        "description": "Analyzes datasets and provides insights",
+        "tags": ["data", "analysis"],
+        "scripts": ["analyze", "summarize"],
+        "resources": ["reference"]
+    },
+    {
+        "name": "file-processor",
+        "description": "Process files in batches",
+        "tags": ["files", "batch"],
+        "scripts": ["process", "validate"],
+        "resources": []
+    }
+]
+```
+
+### load_skill
+
+Get full details for a specific skill:
+
+```python
+# Agent calls: load_skill(skill_name="data-analyzer")
+# Returns:
+{
+    "name": "data-analyzer",
+    "description": "Analyzes datasets and provides insights",
+    "content": "# Data Analyzer\n\nUse this skill to analyze...",
+    "scripts": [
+        {"name": "analyze", "description": "Analyze a data file"},
+        {"name": "summarize", "description": "Summarize analysis results"}
+    ],
+    "resources": [
+        {"name": "reference", "description": "Reference documentation"}
+    ],
+    "tags": ["data", "analysis"],
+    "allowed_tools": ["filesystem__read_file"],
+    "version": "1.0.0"
+}
+```
+
+## Filtering and Sorting
+
+### Filter by Tags
+
+```python
+# Get skills with specific tags
+data_skills = manager.list(tags=["data"])
+file_skills = manager.list(tags=["files", "processing"])
+```
+
+### Filter by Status
+
+```python
+from agent_skills import SkillStatus
+
+# Only active skills
+active = manager.list(status=SkillStatus.ACTIVE)
+
+# Only draft skills
+drafts = manager.list(status=SkillStatus.DRAFT)
+```
+
+### Filter by Tools
+
+Find skills that use specific MCP tools:
+
+```python
+# Skills that use filesystem tools
+fs_skills = [
+    s for s in manager.list()
+    if any("filesystem" in t for t in s.metadata.allowed_tools)
+]
+```
+
+## Skill Metadata
+
+### SKILL.md Metadata
+
+Skills in SKILL.md format include rich metadata:
+
+```markdown
+---
+name: data-analyzer
+description: Analyzes datasets and provides insights
+version: 1.2.0
+author: Team Data
+tags:
+  - data
+  - analysis
+  - csv
+allowed-tools:
+  - filesystem__read_file
+  - filesystem__write_file
+context: sandbox
+user-invocable: true
+hooks:
+  before-invoke: "echo 'Starting analysis...'"
+  after-invoke: "echo 'Analysis complete!'"
+---
+
+# Data Analyzer
+
+Instructions for using this skill...
+```
+
+### Python File Metadata
+
+Python skills use docstrings and type hints:
+
+```python
+# skills/data_analyzer.py
+"""Data Analyzer - Analyzes datasets and provides insights.
+
+Tags: data, analysis, csv
+Tools: filesystem__read_file, filesystem__write_file
+Version: 1.2.0
+Author: Team Data
+"""
+
+async def analyze(path: str, format: str = "csv") -> dict:
+    """Analyze a data file.
+    
+    Args:
+        path: Path to the file to analyze.
+        format: File format (csv, json, tsv).
+    
+    Returns:
+        Analysis results with row count, column info, etc.
+    """
+    ...
+```
+
+## Discovery Best Practices
+
+### 1. Use Descriptive Names
+
+```python
+# Good: Clear, searchable names
+"csv-data-analyzer"
+"file-backup-manager"
+"json-schema-validator"
+
+# Avoid: Vague names
+"processor"
+"helper"
+"utils"
+```
+
+### 2. Write Good Descriptions
+
+```python
+# Good: Explains what, when, and how
+description="Analyzes CSV files to extract statistics, find patterns, and identify data quality issues. Use for data exploration before processing."
+
+# Avoid: Too brief
+description="Analyzes files"
+```
+
+### 3. Use Tags Consistently
+
+Establish a tagging convention:
+
+```python
+# Category tags
+tags=["data", "files", "web", "database"]
+
+# Action tags
+tags=["analysis", "processing", "validation", "transformation"]
+
+# Format tags
+tags=["csv", "json", "xml", "yaml"]
+```
+
+### 4. Document Tool Dependencies
+
+```python
+# List the tools your skill needs
+allowed_tools=[
+    "filesystem__read_file",
+    "filesystem__write_file",
+    "filesystem__list_directory",
+]
+```
+
+### 5. Version Your Skills
+
+```python
+version="1.2.0"  # Major.Minor.Patch
+```
+
+## Programmatic Discovery
+
+### Custom Discovery Logic
+
+```python
+from pathlib import Path
+from agent_skills import Skill
+
+def discover_custom(directory: str) -> list[Skill]:
+    """Custom skill discovery logic."""
+    skills = []
+    
+    for path in Path(directory).rglob("*.skill.md"):
+        content = path.read_text()
+        skill = Skill.from_skill_md(content)
+        
+        # Custom filtering
+        if skill.status == SkillStatus.ACTIVE:
+            skills.append(skill)
+    
+    return skills
+```
+
+### Registry Pattern
+
+For large skill collections, use a registry:
+
+```python
+from agent_skills import SkillsManager
+
+class SkillRegistry:
+    """Central registry for skill discovery."""
+    
+    def __init__(self):
+        self.managers: dict[str, SkillsManager] = {}
+    
+    def register(self, namespace: str, path: str):
+        """Register a skill namespace."""
+        self.managers[namespace] = SkillsManager(path)
+    
+    def discover_all(self) -> dict[str, list[Skill]]:
+        """Discover skills from all namespaces."""
+        return {
+            ns: mgr.discover()
+            for ns, mgr in self.managers.items()
+        }
+    
+    def search(self, query: str) -> list[SkillSearchResult]:
+        """Search across all namespaces."""
+        results = []
+        for mgr in self.managers.values():
+            results.extend(mgr.search(query))
+        return sorted(results, key=lambda r: r.score, reverse=True)
+
+# Usage
+registry = SkillRegistry()
+registry.register("core", "./skills/core")
+registry.register("data", "./skills/data")
+registry.register("shared", "/shared/skills")
+
+all_skills = registry.discover_all()
+matches = registry.search("file processing")
+```
