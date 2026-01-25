@@ -153,9 +153,31 @@ class SandboxExecutor:
             args=args,
         )
         
+        # Get identity environment variables from request context
+        identity_env: dict[str, str] | None = None
         try:
-            # Execute in sandbox
-            if asyncio.iscoroutinefunction(getattr(self.sandbox, 'execute', None)):
+            from agent_runtimes.context.identities import get_identity_env
+            identity_env = get_identity_env()
+            if identity_env:
+                logger.debug(f"SandboxExecutor: Using identity env vars: {list(identity_env.keys())}")
+        except ImportError:
+            # agent_runtimes not installed, skip identity context
+            pass
+        
+        try:
+            # Execute in sandbox - prefer run_code if available (supports envs)
+            if hasattr(self.sandbox, 'run_code'):
+                # Use run_code which supports envs parameter
+                result = self.sandbox.run_code(execution_code, envs=identity_env)
+                # Extract output from Execution object
+                if hasattr(result, 'logs') and result.logs:
+                    stdout_lines = [msg.data for msg in result.logs.stdout] if result.logs.stdout else []
+                    return '\n'.join(stdout_lines)
+                elif hasattr(result, 'results') and result.results:
+                    return '\n'.join(str(r.data) for r in result.results)
+                else:
+                    return ""
+            elif asyncio.iscoroutinefunction(getattr(self.sandbox, 'execute', None)):
                 result = await asyncio.wait_for(
                     self.sandbox.execute(execution_code),
                     timeout=timeout,
@@ -245,10 +267,20 @@ class LocalPythonExecutor:
     
     This is a simpler executor that runs scripts via subprocess.
     Use SandboxExecutor for better isolation.
+    
+    Args:
+        python_executable: Path to Python executable (defaults to "python").
+        default_timeout: Default execution timeout in seconds.
+        env: Environment variables to pass to the subprocess.
+              These are merged with the current environment.
+        use_identity_context: Whether to include identity tokens from the
+              request context as environment variables (default: True).
     """
     
     python_executable: str | Path | None = None
     default_timeout: int = 30
+    env: dict[str, str] | None = None
+    use_identity_context: bool = True
     
     async def execute(
         self,
@@ -259,6 +291,7 @@ class LocalPythonExecutor:
         timeout: int | None = None,
     ) -> str:
         """Execute a skill script using subprocess."""
+        import os
         import subprocess
         
         timeout = timeout or self.default_timeout
@@ -266,7 +299,26 @@ class LocalPythonExecutor:
         
         cmd = [str(python), str(script_path)] + args
         
+        # Merge environment variables with current environment
+        exec_env = os.environ.copy()
+        if self.env:
+            exec_env.update(self.env)
+        
+        # Also merge identity environment variables from request context
+        if self.use_identity_context:
+            try:
+                from agent_runtimes.context.identities import get_identity_env
+                identity_env = get_identity_env()
+                if identity_env:
+                    exec_env.update(identity_env)
+                    logger.debug(f"Added identity env vars: {list(identity_env.keys())}")
+            except ImportError:
+                # agent_runtimes not installed, skip identity context
+                pass
+        
         logger.debug(f"Executing: {' '.join(cmd)}")
+        if self.env:
+            logger.debug(f"With env vars: {list(self.env.keys())}")
         
         try:
             result = await asyncio.wait_for(
@@ -274,6 +326,7 @@ class LocalPythonExecutor:
                     *cmd,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
+                    env=exec_env,
                 ),
                 timeout=timeout,
             )
