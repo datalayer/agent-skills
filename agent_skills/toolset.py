@@ -724,6 +724,7 @@ if PYDANTIC_AI_AVAILABLE:
             default_factory=dict, repr=False
         )
         _initialized: bool = field(default=False, repr=False)
+        _skills_call_count: int = field(default=0, repr=False)
         
         def __post_init__(self):
             # Add programmatic skills
@@ -872,6 +873,7 @@ if PYDANTIC_AI_AVAILABLE:
         ) -> Any:
             """Call a tool by name."""
             await self._ensure_initialized()
+            self._skills_call_count += 1
             
             if name == "list_skills":
                 return self._list_skills()
@@ -891,6 +893,12 @@ if PYDANTIC_AI_AVAILABLE:
                 )
             else:
                 raise ValueError(f"Unknown tool: {name}")
+        
+        def get_call_counts(self) -> dict[str, int]:
+            """Return counts for skills tool calls."""
+            return {
+                "skills_tool_calls": self._skills_call_count,
+            }
         
         def _list_skills(self) -> str:
             """List all available skills."""

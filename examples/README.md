@@ -1,19 +1,45 @@
 # Agent Skills Examples
 
-This directory contains runnable examples for Agent Skills.
+This directory contains runnable examples demonstrating the agent-skills framework.
 
-## Examples
+## Structure
 
-### Skills Example
-
-Demonstrates skill creation, SKILL.md parsing, discovery, execution, versioning, and MCP server setup.
-
-```bash
-python examples/skills_example.py
+```
+examples/
+├── README.md           # This file
+└── simple/
+    ├── README.md       # Simple examples documentation
+    └── skills_example.py  # Comprehensive skills example
 ```
 
-### SKILL.md Sample
+## Quick Start
 
-A reference SKILL.md file for testing discovery and parsing.
+```bash
+cd examples/simple
+python skills_example.py
+```
 
-- [skills/SKILL.md](skills/SKILL.md)
+## Examples Overview
+
+### Simple Examples
+
+The `simple/` directory contains a comprehensive example that demonstrates:
+
+| Example | Description |
+|---------|-------------|
+| **Skill Creation** | Create skills programmatically via the SkillsManager API |
+| **SKILL.md Format** | Parse and generate Claude Code compatible SKILL.md files |
+| **Skill Discovery** | Discover and search skills from directories |
+| **Skill Execution** | Execute skills in sandboxes with arguments |
+| **Skill Versioning** | Version management for skills |
+| **Skills as Code** | Simple code file-based skills with SimpleSkillsManager |
+| **MCP Server** | Expose skills via MCP protocol |
+
+See [simple/README.md](simple/README.md) for details.
+
+## Integration with Agent Codemode
+
+For skills integrated with Agent Codemode (code-first tool composition), see:
+- [agent-codemode/examples/skills/](https://github.com/datalayer/agent-codemode/tree/main/examples/skills)
+
+This demonstrates using `DatalayerSkillsToolset` alongside `CodemodeToolset` for agents with both MCP tools and skills.

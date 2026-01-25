@@ -97,7 +97,7 @@ print(f"Analysis result: {result}")
 
 async def example_skill_md_format():
     """Example 2: Using SKILL.md Format (Claude Code Compatible)."""
-    from agent_skills import Skill, SkillMetadata, SkillContext
+    from agent_skills import Skill
     
     print("\n" + "=" * 60)
     print("Example 2: SKILL.md Format")

@@ -1,26 +1,119 @@
 ---
 title: Examples
-sidebar_position: 6
 ---
 
 # Examples
 
-Run the examples from the examples directory.
+Agent Skills includes runnable examples demonstrating all framework features.
 
-## Skills Example
+## Simple Examples
 
-Demonstrates skill creation, SKILL.md parsing, discovery, execution, versioning, and MCP server setup.
+The `examples/simple/` directory contains a comprehensive example covering:
 
-- Source: https://github.com/datalayer/agent-skills/blob/main/examples/skills_example.py
+| Feature | Description |
+|---------|-------------|
+| **Skill Creation** | Create skills programmatically via SkillsManager API |
+| **SKILL.md Format** | Parse and generate Claude Code compatible SKILL.md files |
+| **Skill Discovery** | Discover and search skills from directories |
+| **Skill Execution** | Execute skills in sandboxes with arguments |
+| **Skill Versioning** | Version management for skills |
+| **Skills as Code** | Simple code file-based skills with SimpleSkillsManager |
+| **MCP Server** | Expose skills via MCP protocol |
+
+### Running the Example
 
 ```bash
-python examples/skills_example.py
+cd examples/simple
+python skills_example.py
 ```
 
-## SKILL.md Sample
+**Source:** [examples/simple/skills_example.py](https://github.com/datalayer/agent-skills/blob/main/examples/simple/skills_example.py)
 
-Reference SKILL.md file used for discovery and parsing.
+## Code Snippets
 
-- https://github.com/datalayer/agent-skills/blob/main/examples/skills/SKILL.md
+### Skill Creation
 
-See the examples README: https://github.com/datalayer/agent-skills/blob/main/examples/README.md
+```python
+from agent_skills import SkillsManager, SkillContext
+
+manager = SkillsManager("./skills")
+skill = manager.create(
+    name="data_analyzer",
+    description="Analyze data from a file",
+    content="# Data Analyzer\n...",
+    python_code='print("Analyzing...")',
+    allowed_tools=["filesystem__read_file"],
+    tags=["data", "analysis"],
+    context=SkillContext.FORK,
+)
+```
+
+### SKILL.md Parsing
+
+```python
+from agent_skills import Skill
+
+skill = Skill.from_skill_md("""---
+name: web_scraper
+description: Scrape and extract data
+version: 1.0.0
+allowed-tools:
+  - http__fetch
+---
+
+# Web Scraper Skill
+...
+""")
+```
+
+### Skill Discovery & Search
+
+```python
+# Discover from directory
+discovered = manager.discover()
+
+# Search for skills
+result = manager.search("data processing", limit=5)
+
+# Filter by tags
+data_skills = manager.list(tags=["data"])
+```
+
+### Skill Execution
+
+```python
+skill = manager.get("data_analyzer")
+execution = await manager.execute(
+    skill,
+    arguments={"file_path": "/tmp/data.txt"},
+    timeout=10.0,
+)
+```
+
+## Integration with Agent Codemode
+
+For skills integrated with Agent Codemode (code-first tool composition), see the [agent-codemode skills example](https://github.com/datalayer/agent-codemode/tree/main/examples/skills).
+
+This demonstrates using `DatalayerSkillsToolset` alongside `CodemodeToolset`:
+
+```python
+from agent_codemode import CodemodeToolset, ToolRegistry, CodeModeConfig
+from agent_skills import DatalayerSkillsToolset
+
+# Codemode toolset for MCP tools
+codemode_toolset = CodemodeToolset(registry=registry, config=config)
+
+# Skills toolset for skill discovery and execution
+skills_toolset = DatalayerSkillsToolset(directories=["./skills"])
+
+# Use both with pydantic-ai
+agent = Agent(
+    model='anthropic:claude-sonnet-4-0',
+    toolsets=[codemode_toolset, skills_toolset],
+)
+```
+
+## Further Reading
+
+- [examples/README.md](https://github.com/datalayer/agent-skills/blob/main/examples/README.md)
+- [examples/simple/README.md](https://github.com/datalayer/agent-skills/blob/main/examples/simple/README.md)
