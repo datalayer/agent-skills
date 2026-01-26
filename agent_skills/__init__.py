@@ -108,7 +108,7 @@ from .simple import (
 
 # Optional: Managed Skills
 from .manager import SkillsManager
-from .models import (
+from .types import (
     Skill,
     SkillContext,
     SkillExecution,
@@ -131,6 +131,7 @@ from .toolset import (
     LocalPythonExecutor,
     CallableExecutor,
     SkillScriptExecutorProtocol,
+    ScriptExecutionResult,
     PYDANTIC_AI_AVAILABLE,
 )
 
@@ -176,5 +177,6 @@ __all__ = [
     "LocalPythonExecutor",
     "CallableExecutor",
     "SkillScriptExecutorProtocol",
+    "ScriptExecutionResult",
     "PYDANTIC_AI_AVAILABLE",
 ]

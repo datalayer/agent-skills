@@ -40,12 +40,41 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Protocol, runtime_checkable
 
 from code_sandboxes import ExecutionResult
+from typing import TypedDict
 
 if TYPE_CHECKING:
     from code_sandboxes import LocalEvalSandbox
     from pydantic_ai._run_context import RunContext
 
 logger = logging.getLogger(__name__)
+
+
+class ScriptExecutionResult(TypedDict, total=False):
+    """Structured result from skill script execution.
+    
+    This provides rich error information including exit codes,
+    allowing the UI to properly display different failure modes.
+    """
+    # Success indicator
+    success: bool
+    
+    # Output from the script
+    output: str
+    stdout: str
+    stderr: str
+    
+    # Execution status
+    execution_ok: bool
+    execution_error: str | None
+    
+    # Code error (Python exception)
+    code_error: dict[str, str] | None  # {name, value, traceback}
+    
+    # Exit code from sys.exit()
+    exit_code: int | None
+    
+    # Legacy error field for backwards compatibility
+    error: str | None
 
 
 # =============================================================================
@@ -59,6 +88,9 @@ class SkillScriptExecutorProtocol(Protocol):
     
     This aligns with pydantic-ai's SkillScriptExecutor pattern from PR #3780,
     allowing pluggable execution environments.
+    
+    BREAKING CHANGE: Now returns ScriptExecutionResult dict instead of str.
+    This enables proper error handling with exit_code, code_error, etc.
     """
     
     async def execute(
@@ -68,7 +100,7 @@ class SkillScriptExecutorProtocol(Protocol):
         script_path: Path,
         args: list[str],
         timeout: int | None = None,
-    ) -> str:
+    ) -> ScriptExecutionResult:
         """Execute a skill script.
         
         Args:
@@ -79,7 +111,7 @@ class SkillScriptExecutorProtocol(Protocol):
             timeout: Execution timeout in seconds.
             
         Returns:
-            Script output as string.
+            ScriptExecutionResult with output, exit_code, and error details.
         """
         ...
 
@@ -121,7 +153,7 @@ class SandboxExecutor:
         script_path: Path,
         args: list[str],
         timeout: int | None = None,
-    ) -> str:
+    ) -> ScriptExecutionResult:
         """Execute a skill script in the sandbox.
         
         Args:
@@ -132,11 +164,7 @@ class SandboxExecutor:
             timeout: Execution timeout (uses default if None).
             
         Returns:
-            Script output as string.
-            
-        Raises:
-            TimeoutError: If execution exceeds timeout.
-            RuntimeError: If execution fails.
+            ScriptExecutionResult with output, exit_code, and error details.
         """
         timeout = timeout or self.default_timeout
         
@@ -172,22 +200,72 @@ class SandboxExecutor:
                 # Use run_code which supports envs parameter
                 result: ExecutionResult = self.sandbox.run_code(execution_code, envs=identity_env)
                 
+                # Build structured result from ExecutionResult
+                stdout = result.stdout if result.logs and result.logs.stdout else ""
+                stderr = result.stderr if result.logs and result.logs.stderr else ""
+                
                 # Check for execution failure (infrastructure error)
                 if not result.execution_ok:
-                    raise RuntimeError(f"Sandbox execution failed: {result.execution_error or 'Unknown error'}")
+                    return ScriptExecutionResult(
+                        success=False,
+                        output=stderr or stdout,
+                        stdout=stdout,
+                        stderr=stderr,
+                        execution_ok=False,
+                        execution_error=result.execution_error or "Sandbox execution failed",
+                        code_error=None,
+                        exit_code=None,
+                        error=result.execution_error or "Sandbox execution failed",
+                    )
                 
                 # Check for code error (user code exception)
                 if result.code_error:
-                    # Return error details so the agent can handle/fix it
-                    return str(result.code_error)
+                    return ScriptExecutionResult(
+                        success=False,
+                        output=stderr or stdout,
+                        stdout=stdout,
+                        stderr=stderr,
+                        execution_ok=True,
+                        execution_error=None,
+                        code_error={
+                            "name": result.code_error.name,
+                            "value": result.code_error.value,
+                            "traceback": result.code_error.traceback or "",
+                        },
+                        exit_code=None,
+                        error=f"{result.code_error.name}: {result.code_error.value}",
+                    )
+                
+                # Check for non-zero exit code (intentional sys.exit())
+                if result.exit_code is not None and result.exit_code != 0:
+                    return ScriptExecutionResult(
+                        success=False,
+                        output=stderr or stdout,
+                        stdout=stdout,
+                        stderr=stderr,
+                        execution_ok=True,
+                        execution_error=None,
+                        code_error=None,
+                        exit_code=result.exit_code,
+                        error=f"Script exited with code {result.exit_code}",
+                    )
 
-                # Extract output from ExecutionResult object
-                if result.logs and result.logs.stdout:
-                    return result.stdout
-                elif result.results:
-                    return '\n'.join(str(r.data) for r in result.results)
-                else:
-                    return ""
+                # Success case
+                output = stdout
+                if not output and result.results:
+                    output = '\n'.join(str(r.data) for r in result.results)
+                
+                return ScriptExecutionResult(
+                    success=True,
+                    output=output,
+                    stdout=stdout,
+                    stderr=stderr,
+                    execution_ok=True,
+                    execution_error=None,
+                    code_error=None,
+                    exit_code=result.exit_code,  # Could be 0 or None
+                    error=None,
+                )
             elif asyncio.iscoroutinefunction(getattr(self.sandbox, 'execute', None)):
                 result = await asyncio.wait_for(
                     self.sandbox.execute(execution_code),
@@ -201,22 +279,50 @@ class SandboxExecutor:
                     timeout=timeout,
                 )
             
-            # Extract output
+            # Extract output for legacy sandbox APIs
             if hasattr(result, 'stdout'):
-                return result.stdout or ""
+                output = result.stdout or ""
             elif hasattr(result, 'result'):
-                return str(result.result)
+                output = str(result.result)
             else:
-                return str(result)
+                output = str(result)
+            
+            return ScriptExecutionResult(
+                success=True,
+                output=output,
+                stdout=output,
+                stderr="",
+                execution_ok=True,
+                execution_error=None,
+                code_error=None,
+                exit_code=None,
+                error=None,
+            )
                 
         except asyncio.TimeoutError:
-            raise TimeoutError(
-                f"Skill script {skill_name}/{script_name} timed out after {timeout}s"
+            return ScriptExecutionResult(
+                success=False,
+                output="",
+                stdout="",
+                stderr="",
+                execution_ok=False,
+                execution_error=f"Skill script {skill_name}/{script_name} timed out after {timeout}s",
+                code_error=None,
+                exit_code=None,
+                error=f"Timeout after {timeout}s",
             )
         except Exception as e:
-            raise RuntimeError(
-                f"Skill script {skill_name}/{script_name} failed: {e}"
-            ) from e
+            return ScriptExecutionResult(
+                success=False,
+                output="",
+                stdout="",
+                stderr=str(e),
+                execution_ok=False,
+                execution_error=str(e),
+                code_error=None,
+                exit_code=None,
+                error=str(e),
+            )
     
     def _build_execution_code(
         self,
@@ -300,7 +406,7 @@ class LocalPythonExecutor:
         script_path: Path,
         args: list[str],
         timeout: int | None = None,
-    ) -> str:
+    ) -> ScriptExecutionResult:
         """Execute a skill script using subprocess."""
         import os
         import subprocess
@@ -332,7 +438,7 @@ class LocalPythonExecutor:
             logger.debug(f"With env vars: {list(self.env.keys())}")
         
         try:
-            result = await asyncio.wait_for(
+            proc = await asyncio.wait_for(
                 asyncio.create_subprocess_exec(
                     *cmd,
                     stdout=subprocess.PIPE,
@@ -341,18 +447,46 @@ class LocalPythonExecutor:
                 ),
                 timeout=timeout,
             )
-            stdout, stderr = await result.communicate()
+            stdout_bytes, stderr_bytes = await proc.communicate()
+            stdout = stdout_bytes.decode()
+            stderr = stderr_bytes.decode()
             
-            if result.returncode != 0:
-                raise RuntimeError(
-                    f"Script failed with code {result.returncode}: {stderr.decode()}"
+            if proc.returncode != 0:
+                return ScriptExecutionResult(
+                    success=False,
+                    output=stderr or stdout,
+                    stdout=stdout,
+                    stderr=stderr,
+                    execution_ok=True,  # Process ran, just returned non-zero
+                    execution_error=None,
+                    code_error=None,
+                    exit_code=proc.returncode,
+                    error=f"Script exited with code {proc.returncode}",
                 )
             
-            return stdout.decode()
+            return ScriptExecutionResult(
+                success=True,
+                output=stdout,
+                stdout=stdout,
+                stderr=stderr,
+                execution_ok=True,
+                execution_error=None,
+                code_error=None,
+                exit_code=proc.returncode,
+                error=None,
+            )
             
         except asyncio.TimeoutError:
-            raise TimeoutError(
-                f"Skill script {skill_name}/{script_name} timed out after {timeout}s"
+            return ScriptExecutionResult(
+                success=False,
+                output="",
+                stdout="",
+                stderr="",
+                execution_ok=False,
+                execution_error=f"Skill script {skill_name}/{script_name} timed out after {timeout}s",
+                code_error=None,
+                exit_code=None,
+                error=f"Timeout after {timeout}s",
             )
 
 
@@ -1005,11 +1139,25 @@ if PYDANTIC_AI_AVAILABLE:
             script_name: str,
             args: list[str],
             ctx: RunContext,
-        ) -> str:
-            """Run a skill script."""
+        ) -> ScriptExecutionResult:
+            """Run a skill script.
+            
+            Returns:
+                ScriptExecutionResult with output, exit_code, and error details.
+            """
             skill = self._discovered_skills.get(skill_name)
             if not skill:
-                return f"Skill not found: {skill_name}"
+                return ScriptExecutionResult(
+                    success=False,
+                    output="",
+                    stdout="",
+                    stderr="",
+                    execution_ok=False,
+                    execution_error=f"Skill not found: {skill_name}",
+                    code_error=None,
+                    exit_code=None,
+                    error=f"Skill not found: {skill_name}",
+                )
             
             # Find the script
             script = None
@@ -1019,23 +1167,44 @@ if PYDANTIC_AI_AVAILABLE:
                     break
             
             if not script:
-                return f"Script not found: {script_name}"
+                return ScriptExecutionResult(
+                    success=False,
+                    output="",
+                    stdout="",
+                    stderr="",
+                    execution_ok=False,
+                    execution_error=f"Script not found: {script_name}",
+                    code_error=None,
+                    exit_code=None,
+                    error=f"Script not found: {script_name}",
+                )
             
             # Execute
             try:
                 if script.is_callable():
-                    # Programmatic script
+                    # Programmatic script - returns string, wrap it
                     callable_executor = CallableExecutor(
                         default_timeout=self.script_timeout
                     )
-                    return await callable_executor.execute_callable(
+                    output = await callable_executor.execute_callable(
                         script.callable,
                         ctx,
                         args,
                         self.script_timeout,
                     )
+                    return ScriptExecutionResult(
+                        success=True,
+                        output=output,
+                        stdout=output,
+                        stderr="",
+                        execution_ok=True,
+                        execution_error=None,
+                        code_error=None,
+                        exit_code=0,
+                        error=None,
+                    )
                 elif self.executor and script.path:
-                    # File-based script with executor
+                    # File-based script with executor - returns ScriptExecutionResult
                     return await self.executor.execute(
                         skill_name=skill_name,
                         script_name=script_name,
@@ -1044,11 +1213,41 @@ if PYDANTIC_AI_AVAILABLE:
                         timeout=self.script_timeout,
                     )
                 else:
-                    return f"No executor configured for script: {script_name}"
+                    return ScriptExecutionResult(
+                        success=False,
+                        output="",
+                        stdout="",
+                        stderr="",
+                        execution_ok=False,
+                        execution_error=f"No executor configured for script: {script_name}",
+                        code_error=None,
+                        exit_code=None,
+                        error=f"No executor configured for script: {script_name}",
+                    )
             except TimeoutError as e:
-                return f"Script timed out: {e}"
+                return ScriptExecutionResult(
+                    success=False,
+                    output="",
+                    stdout="",
+                    stderr="",
+                    execution_ok=False,
+                    execution_error=f"Script timed out: {e}",
+                    code_error=None,
+                    exit_code=None,
+                    error=f"Script timed out: {e}",
+                )
             except Exception as e:
-                return f"Script failed: {e}"
+                return ScriptExecutionResult(
+                    success=False,
+                    output="",
+                    stdout="",
+                    stderr=str(e),
+                    execution_ok=False,
+                    execution_error=str(e),
+                    code_error=None,
+                    exit_code=None,
+                    error=f"Script failed: {e}",
+                )
         
         async def get_instructions(self, ctx: RunContext | None = None) -> str:
             """Get instructions for system prompt injection.

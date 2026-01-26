@@ -21,7 +21,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
-from .models import (
+from .types import (
     Skill,
     SkillContext,
     SkillExecution,

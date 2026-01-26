@@ -2,144 +2,156 @@
 #
 # BSD 3-Clause License
 
-"""Data models for Agent Skills.
+"""Data types for Agent Skills.
 
-Based on Anthropic's Claude Code Skills format with YAML frontmatter
-and the Anthropic SDK Skills API structure.
+Based on Agents Skills format with YAML frontmatter.
 """
 
-from dataclasses import dataclass, field
+from __future__ import annotations
+
+from datetime import datetime
 from enum import Enum
 from typing import Any, Optional
-from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
-class SkillStatus(Enum):
+class SkillStatus(str, Enum):
     """Status of a skill."""
+
     DRAFT = "draft"
     ACTIVE = "active"
     ARCHIVED = "archived"
 
 
-class SkillContext(Enum):
+class SkillContext(str, Enum):
     """Execution context for skills."""
-    FORK = "fork"          # Run in isolated fork (default)
-    INLINE = "inline"      # Run in current context
-    SANDBOX = "sandbox"    # Run in code sandbox
+
+    FORK = "fork"  # Run in isolated fork (default)
+    INLINE = "inline"  # Run in current context
+    SANDBOX = "sandbox"  # Run in code sandbox
 
 
-@dataclass
-class SkillHooks:
+class SkillHooks(BaseModel):
     """Lifecycle hooks for skills.
-    
+
     Based on Claude Code Skills hook system.
     """
-    before_invoke: Optional[str] = None   # Shell command to run before
-    after_invoke: Optional[str] = None    # Shell command to run after
-    on_error: Optional[str] = None        # Shell command on error
+
+    model_config = ConfigDict(extra="forbid")
+
+    before_invoke: Optional[str] = None  # Shell command to run before
+    after_invoke: Optional[str] = None  # Shell command to run after
+    on_error: Optional[str] = None  # Shell command on error
 
 
-@dataclass
-class SkillMetadata:
+class SkillMetadata(BaseModel):
     """Metadata for a skill.
-    
+
     Based on SKILL.md YAML frontmatter format from Claude Code.
     """
+
+    model_config = ConfigDict(extra="forbid")
+
     name: str
     description: str
     version: str = "1.0.0"
-    
+
     # Tool access control
-    allowed_tools: list[str] = field(default_factory=list)
-    denied_tools: list[str] = field(default_factory=list)
-    
+    allowed_tools: list[str] = Field(default_factory=list)
+    denied_tools: list[str] = Field(default_factory=list)
+
     # Model configuration
     model: Optional[str] = None
-    
+
     # Execution context
     context: SkillContext = SkillContext.FORK
-    
+
     # Visibility
     user_invocable: bool = True
-    
+
     # Lifecycle hooks
     hooks: Optional[SkillHooks] = None
-    
+
     # Tags for categorization
-    tags: list[str] = field(default_factory=list)
-    
+    tags: list[str] = Field(default_factory=list)
+
     # Author info
     author: Optional[str] = None
 
     # Optional spec fields
     license: Optional[str] = None
     compatibility: Optional[str] = None
-    metadata: dict[str, str] = field(default_factory=dict)
-    
+    metadata: dict[str, str] = Field(default_factory=dict)
+
     # Timestamps
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
 
-@dataclass
-class Skill:
+class Skill(BaseModel):
     """A reusable agent skill.
-    
+
     Skills are code-based tool compositions that can be:
     - Discovered by agents
     - Activated when relevant
     - Executed with parameters
     - Saved and versioned
-    
+
     Based on:
     - Claude Code SKILL.md format
     - Anthropic SDK Skills API
     """
+
+    model_config = ConfigDict(extra="forbid")
+
     metadata: SkillMetadata
     content: str  # Markdown content with instructions
-    
+
     # Optional code implementations
     python_code: Optional[str] = None
     typescript_code: Optional[str] = None
-    
+
     # Status
     status: SkillStatus = SkillStatus.ACTIVE
-    
+
     # Unique ID (for API compatibility)
     skill_id: Optional[str] = None
-    
+
     @property
     def name(self) -> str:
         return self.metadata.name
-    
+
     @property
     def description(self) -> str:
         return self.metadata.description
-    
+
     @classmethod
     def from_skill_md(cls, content: str) -> "Skill":
         """Parse a SKILL.md file into a Skill object.
-        
+
         Args:
             content: Full content of a SKILL.md file.
-            
+
         Returns:
             Parsed Skill object.
         """
         import re
-        
+
         # Extract YAML frontmatter
-        frontmatter_match = re.match(r'^---\s*\n(.*?)\n---\s*\n(.*)$', content, re.DOTALL)
-        
+        frontmatter_match = re.match(
+            r"^---\s*\n(.*?)\n---\s*\n(.*)$", content, re.DOTALL
+        )
+
         if not frontmatter_match:
             raise ValueError("Invalid SKILL.md format: missing YAML frontmatter")
-        
+
         yaml_content = frontmatter_match.group(1)
         markdown_content = frontmatter_match.group(2)
-        
+
         # Parse YAML (simple parser for common fields)
         metadata_dict = cls._parse_yaml(yaml_content)
-        
+
         # Build metadata
         hooks = None
         if "hooks" in metadata_dict:
@@ -149,11 +161,11 @@ class Skill:
                 after_invoke=hooks_dict.get("after-invoke"),
                 on_error=hooks_dict.get("on-error"),
             )
-        
+
         context = SkillContext.FORK
         if "context" in metadata_dict:
             context = SkillContext(metadata_dict["context"])
-        
+
         name = metadata_dict.get("name", "")
         description = metadata_dict.get("description", "")
 
@@ -184,21 +196,21 @@ class Skill:
             compatibility=metadata_dict.get("compatibility"),
             metadata=metadata_dict.get("metadata", {}),
         )
-        
+
         # Extract code blocks from markdown
         python_code = cls._extract_code_block(markdown_content, "python")
         typescript_code = cls._extract_code_block(markdown_content, "typescript")
-        
+
         return cls(
             metadata=metadata,
             content=markdown_content,
             python_code=python_code,
             typescript_code=typescript_code,
         )
-    
+
     def to_skill_md(self) -> str:
         """Convert skill to SKILL.md format.
-        
+
         Returns:
             SKILL.md formatted string.
         """
@@ -206,19 +218,19 @@ class Skill:
         lines.append(f"name: {self.metadata.name}")
         lines.append(f"description: {self.metadata.description}")
         lines.append(f"version: {self.metadata.version}")
-        
+
         if self.metadata.allowed_tools:
             lines.append(f"allowed-tools: {' '.join(self.metadata.allowed_tools)}")
-        
+
         if self.metadata.denied_tools:
             lines.append(f"denied-tools: {' '.join(self.metadata.denied_tools)}")
-        
+
         if self.metadata.model:
             lines.append(f"model: {self.metadata.model}")
-        
+
         lines.append(f"context: {self.metadata.context.value}")
         lines.append(f"user-invocable: {str(self.metadata.user_invocable).lower()}")
-        
+
         if self.metadata.hooks:
             lines.append("hooks:")
             if self.metadata.hooks.before_invoke:
@@ -227,12 +239,12 @@ class Skill:
                 lines.append(f"  after-invoke: {self.metadata.hooks.after_invoke}")
             if self.metadata.hooks.on_error:
                 lines.append(f"  on-error: {self.metadata.hooks.on_error}")
-        
+
         if self.metadata.tags:
             lines.append("tags:")
             for tag in self.metadata.tags:
                 lines.append(f"  - {tag}")
-        
+
         if self.metadata.author:
             lines.append(f"author: {self.metadata.author}")
 
@@ -246,41 +258,41 @@ class Skill:
             lines.append("metadata:")
             for key, value in self.metadata.metadata.items():
                 lines.append(f"  {key}: {value}")
-        
+
         lines.append("---")
         lines.append("")
         lines.append(self.content)
-        
+
         return "\n".join(lines)
-    
+
     @staticmethod
     def _parse_yaml(content: str) -> dict[str, Any]:
         """Simple YAML parser for skill frontmatter."""
         result: dict[str, Any] = {}
-        current_key = None
+        current_key: str | None = None
         current_list: list[str] = []
         current_dict: dict[str, str] = {}
         in_list = False
         in_dict = False
-        
+
         for line in content.split("\n"):
             stripped = line.strip()
             if not stripped:
                 continue
-            
+
             # Check for list item
             if stripped.startswith("- "):
                 if in_list and current_key:
                     current_list.append(stripped[2:].strip())
                 continue
-            
+
             # Check for dict item (indented key: value)
             if line.startswith("  ") and ":" in stripped and not stripped.endswith(":"):
                 if in_dict and current_key:
                     key, value = stripped.split(":", 1)
                     current_dict[key.strip()] = value.strip()
                 continue
-            
+
             # Save previous list/dict
             if in_list and current_key:
                 result[current_key] = current_list
@@ -290,13 +302,13 @@ class Skill:
                 result[current_key] = current_dict
                 current_dict = {}
                 in_dict = False
-            
+
             # Parse key: value
             if ":" in stripped:
                 key, value = stripped.split(":", 1)
                 key = key.strip()
                 value = value.strip()
-                
+
                 if value == "":
                     # Start of list or dict
                     current_key = key
@@ -306,30 +318,33 @@ class Skill:
                     result[key] = value.lower() == "true"
                 else:
                     result[key] = value
-        
+
         # Save final list/dict
         if in_list and current_key and current_list:
             result[current_key] = current_list
         if in_dict and current_key and current_dict:
             result[current_key] = current_dict
-        
+
         return result
-    
+
     @staticmethod
     def _extract_code_block(content: str, language: str) -> Optional[str]:
         """Extract a code block for a specific language."""
         import re
-        pattern = rf'```{language}\s*\n(.*?)\n```'
+
+        pattern = rf"```{language}\s*\n(.*?)\n```"
         match = re.search(pattern, content, re.DOTALL)
         return match.group(1) if match else None
 
 
-@dataclass
-class SkillVersion:
+class SkillVersion(BaseModel):
     """A version of a skill.
-    
+
     Supports skill versioning as in Anthropic SDK.
     """
+
+    model_config = ConfigDict(extra="forbid")
+
     version_id: str
     skill_id: str
     version: str
@@ -338,21 +353,25 @@ class SkillVersion:
     is_current: bool = False
 
 
-@dataclass
-class SkillExecution:
+class SkillExecution(BaseModel):
     """Result of executing a skill."""
+
+    model_config = ConfigDict(extra="forbid")
+
     skill_id: str
     success: bool
     result: Any = None
     error: Optional[str] = None
     execution_time: float = 0.0
     logs: Optional[str] = None
-    tool_calls: list[dict[str, Any]] = field(default_factory=list)
+    tool_calls: list[dict[str, Any]] = Field(default_factory=list)
 
 
-@dataclass
-class SkillSearchResult:
+class SkillSearchResult(BaseModel):
     """Result of searching for skills."""
+
+    model_config = ConfigDict(extra="forbid")
+
     skills: list[Skill]
     total: int
     query: str

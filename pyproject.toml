@@ -23,6 +23,7 @@ classifiers = [
 dependencies = [
     "code_sandboxes",
     "mcp[cli]>=1.0",
+  "pydantic>=2.0",
     # pydantic-ai with skills support from PR #3780
     # Need to install both pydantic-graph and pydantic-ai-slim from the same branch
     "pydantic-graph @ git+https://github.com/DougTrajano/pydantic-ai.git@DEV-1099#subdirectory=pydantic_graph",

@@ -13,7 +13,7 @@ import pytest
 
 from agent_skills.files import SkillFile, SkillDirectory, setup_skills_directory
 from agent_skills.codegen import generate_skill_file, generate_skill_from_template
-from agent_skills.models import (
+from agent_skills.types import (
     Skill,
     SkillContext,
     SkillHooks,

@@ -256,9 +256,10 @@ print(f"Hello from script! Args: {sys.argv[1:]}")
             script_path=script_file,
             args=["arg1", "arg2"],
         )
-        
-        assert "Hello from script" in result
-        assert "arg1" in result
+
+        assert result["success"] is True
+        assert "Hello from script" in result["output"]
+        assert "arg1" in result["output"]
 
 
 # =============================================================================
@@ -444,7 +445,8 @@ Instructions for skill two.
                 args=["--flag"],
             )
 
-            assert output == "ok"
+            assert output["success"] is True
+            assert output["output"] == "ok"
 
         @pytest.mark.asyncio
         async def test_executor_returns_code_error(self, tmp_path: Path):
@@ -463,8 +465,10 @@ Instructions for skill two.
                 args=[],
             )
 
-            assert "ValueError" in output
-            assert "bad" in output
+            assert output["success"] is False
+            assert output["code_error"] is not None
+            assert output["code_error"]["name"] == "ValueError"
+            assert output["code_error"]["value"] == "bad"
 
         @pytest.mark.asyncio
         async def test_executor_raises_on_execution_failure(self, tmp_path: Path):
@@ -477,13 +481,16 @@ Instructions for skill two.
             )
             executor = SandboxExecutor(self.DummySandbox(result))
 
-            with pytest.raises(RuntimeError, match="sandbox unavailable"):
-                await executor.execute(
-                    skill_name="test-skill",
-                    script_name="run",
-                    script_path=script_path,
-                    args=[],
-                )
+            output = await executor.execute(
+                skill_name="test-skill",
+                script_name="run",
+                script_path=script_path,
+                args=[],
+            )
+
+            assert output["success"] is False
+            assert output["execution_ok"] is False
+            assert output["execution_error"] == "sandbox unavailable"
 # Integration Tests
 # =============================================================================
 

@@ -22,7 +22,6 @@ from typing import Any, Optional
 from mcp.server.fastmcp import FastMCP
 
 from .manager import SkillsManager
-from .models import Skill, SkillContext, SkillMetadata, SkillStatus
 
 logger = logging.getLogger(__name__)
 
