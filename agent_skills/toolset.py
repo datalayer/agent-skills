@@ -39,6 +39,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Protocol, runtime_checkable
 
+from code_sandboxes import ExecutionResult
+
 if TYPE_CHECKING:
     from code_sandboxes import LocalEvalSandbox
     from pydantic_ai._run_context import RunContext
@@ -168,12 +170,21 @@ class SandboxExecutor:
             # Execute in sandbox - prefer run_code if available (supports envs)
             if hasattr(self.sandbox, 'run_code'):
                 # Use run_code which supports envs parameter
-                result = self.sandbox.run_code(execution_code, envs=identity_env)
-                # Extract output from Execution object
-                if hasattr(result, 'logs') and result.logs:
-                    stdout_lines = [msg.data for msg in result.logs.stdout] if result.logs.stdout else []
-                    return '\n'.join(stdout_lines)
-                elif hasattr(result, 'results') and result.results:
+                result: ExecutionResult = self.sandbox.run_code(execution_code, envs=identity_env)
+                
+                # Check for execution failure (infrastructure error)
+                if not result.execution_ok:
+                    raise RuntimeError(f"Sandbox execution failed: {result.execution_error or 'Unknown error'}")
+                
+                # Check for code error (user code exception)
+                if result.code_error:
+                    # Return error details so the agent can handle/fix it
+                    return str(result.code_error)
+
+                # Extract output from ExecutionResult object
+                if result.logs and result.logs.stdout:
+                    return result.stdout
+                elif result.results:
                     return '\n'.join(str(r.data) for r in result.results)
                 else:
                     return ""

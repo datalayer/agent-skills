@@ -7,6 +7,8 @@
 import pytest
 from pathlib import Path
 
+from code_sandboxes import CodeError, ExecutionResult, Logs, OutputMessage
+
 from agent_skills import (
     DatalayerSkillsToolset,
     DatalayerSkill,
@@ -115,7 +117,7 @@ class TestDatalayerSkillFromFile:
         skill_path.mkdir()
         
         skill_md = skill_path / "SKILL.md"
-                skill_md.write_text("""---
+        skill_md.write_text("""---
 name: test-skill
 description: A test skill from file
 version: "2.0.0"
@@ -403,7 +405,85 @@ Instructions for skill two.
         assert "load_skill" in instructions
 
 
+
+
 # =============================================================================
+
+
+    
+
+    class TestSandboxExecutor:
+        """Tests for SandboxExecutor using ExecutionResult fields."""
+
+        class DummySandbox:
+            def __init__(self, result: ExecutionResult):
+                self.result = result
+                self.last_code: str | None = None
+                self.last_envs: dict[str, str] | None = None
+
+            def run_code(self, code: str, envs: dict[str, str] | None = None) -> ExecutionResult:
+                self.last_code = code
+                self.last_envs = envs
+                return self.result
+
+        @pytest.mark.asyncio
+        async def test_executor_success_uses_stdout(self, tmp_path: Path):
+            script_path = tmp_path / "script.py"
+            script_path.write_text("print('hello')")
+
+            result = ExecutionResult(
+                logs=Logs(stdout=[OutputMessage(line="ok", timestamp=0.0, error=False)])
+            )
+            sandbox = self.DummySandbox(result)
+            executor = SandboxExecutor(sandbox)
+
+            output = await executor.execute(
+                skill_name="test-skill",
+                script_name="run",
+                script_path=script_path,
+                args=["--flag"],
+            )
+
+            assert output == "ok"
+
+        @pytest.mark.asyncio
+        async def test_executor_returns_code_error(self, tmp_path: Path):
+            script_path = tmp_path / "script.py"
+            script_path.write_text("raise ValueError('bad')")
+
+            result = ExecutionResult(
+                code_error=CodeError(name="ValueError", value="bad", traceback=""),
+            )
+            executor = SandboxExecutor(self.DummySandbox(result))
+
+            output = await executor.execute(
+                skill_name="test-skill",
+                script_name="run",
+                script_path=script_path,
+                args=[],
+            )
+
+            assert "ValueError" in output
+            assert "bad" in output
+
+        @pytest.mark.asyncio
+        async def test_executor_raises_on_execution_failure(self, tmp_path: Path):
+            script_path = tmp_path / "script.py"
+            script_path.write_text("print('x')")
+
+            result = ExecutionResult(
+                execution_ok=False,
+                execution_error="sandbox unavailable",
+            )
+            executor = SandboxExecutor(self.DummySandbox(result))
+
+            with pytest.raises(RuntimeError, match="sandbox unavailable"):
+                await executor.execute(
+                    skill_name="test-skill",
+                    script_name="run",
+                    script_path=script_path,
+                    args=[],
+                )
 # Integration Tests
 # =============================================================================
 

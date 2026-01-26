@@ -473,11 +473,11 @@ class SkillsManager:
                 
                 return SkillExecution(
                     skill_id=skill_id,
-                    success=not execution.error,
+                    success=execution.success,
                     result=execution.results,
-                    error=str(execution.error) if execution.error else None,
-                    execution_time=execution_time,
-                    logs=execution.logs.stdout if execution.logs else None,
+                    error=str(execution.code_error) if execution.code_error else (execution.execution_error if not execution.execution_ok else None),
+                    execution_time=execution.duration if execution.duration else execution_time,
+                    logs=execution.stdout,
                 )
         
         except Exception as e:
