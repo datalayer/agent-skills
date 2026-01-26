@@ -90,29 +90,6 @@ execution = await manager.execute(
 )
 ```
 
-## Integration with Agent Codemode
-
-For skills integrated with Agent Codemode (code-first tool composition), see the [agent-codemode skills example](https://github.com/datalayer/agent-codemode/tree/main/examples/skills).
-
-This demonstrates using `DatalayerSkillsToolset` alongside `CodemodeToolset`:
-
-```python
-from agent_codemode import CodemodeToolset, ToolRegistry, CodeModeConfig
-from agent_skills import DatalayerSkillsToolset
-
-# Codemode toolset for MCP tools
-codemode_toolset = CodemodeToolset(registry=registry, config=config)
-
-# Skills toolset for skill discovery and execution
-skills_toolset = DatalayerSkillsToolset(directories=["./skills"])
-
-# Use both with pydantic-ai
-agent = Agent(
-    model='anthropic:claude-sonnet-4-0',
-    toolsets=[codemode_toolset, skills_toolset],
-)
-```
-
 ## Further Reading
 
 - [examples/README.md](https://github.com/datalayer/agent-skills/blob/main/examples/README.md)
