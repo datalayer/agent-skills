@@ -12,12 +12,12 @@ Build on pydantic-ai's SkillsToolset pattern for progressive disclosure of skill
 
 Example:
     from pydantic_ai import Agent
-    from agent_skills import DatalayerSkillsToolset, SandboxExecutor
+    from agent_skills import AgentSkillsToolset, SandboxExecutor
     from code_sandboxes import LocalEvalSandbox
     
     # Create toolset with sandbox execution
     sandbox = LocalEvalSandbox()
-    toolset = DatalayerSkillsToolset(
+    toolset = AgentSkillsToolset(
         directories=["./skills"],
         executor=SandboxExecutor(sandbox),
     )
@@ -123,12 +123,11 @@ from .codegen import generate_skill_file, generate_skill_from_template
 
 # Pydantic AI Integration (SkillsToolset pattern from PR #3780)
 from .toolset import (
-    DatalayerSkillsToolset,
-    DatalayerSkill,
-    DatalayerSkillResource,
-    DatalayerSkillScript,
+    AgentSkillsToolset,
+    AgentSkill,
+    AgentSkillResource,
+    AgentSkillScript,
     SandboxExecutor,
-    LocalPythonExecutor,
     CallableExecutor,
     SkillScriptExecutorProtocol,
     ScriptExecutionResult,
@@ -169,12 +168,11 @@ __all__ = [
     "skills_server",
     "configure_server",
     # Pydantic AI Integration
-    "DatalayerSkillsToolset",
-    "DatalayerSkill",
-    "DatalayerSkillResource",
-    "DatalayerSkillScript",
+    "AgentSkillsToolset",
+    "AgentSkill",
+    "AgentSkillResource",
+    "AgentSkillScript",
     "SandboxExecutor",
-    "LocalPythonExecutor",
     "CallableExecutor",
     "SkillScriptExecutorProtocol",
     "ScriptExecutionResult",

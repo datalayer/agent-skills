@@ -2,15 +2,15 @@
 #
 # BSD 3-Clause License
 
-"""Datalayer Skills Toolset - Integration with pydantic-ai SkillsToolset.
+"""Agent Skills Toolset - Integration with pydantic-ai SkillsToolset.
 
 This module provides extensions to pydantic-ai's SkillsToolset with:
 - SandboxExecutor: Execute skill scripts in isolated code-sandboxes
-- DatalayerSkillsToolset: Extended toolset with Datalayer-specific features
+- AgentSkillsToolset: Extended toolset with Datalayer-specific features
 
 Example:
     from pydantic_ai import Agent
-    from agent_skills import DatalayerSkillsToolset, SandboxExecutor
+    from agent_skills import AgentSkillsToolset, SandboxExecutor
     from code_sandboxes import LocalEvalSandbox
     
     # Create executor with sandbox
@@ -18,7 +18,7 @@ Example:
     executor = SandboxExecutor(sandbox)
     
     # Create toolset
-    skills_toolset = DatalayerSkillsToolset(
+    skills_toolset = AgentSkillsToolset(
         directories=["./skills"],
         executor=executor,
     )
@@ -143,7 +143,7 @@ class SandboxExecutor:
         )
     """
     
-    sandbox: Any  # LocalEvalSandbox or compatible
+    sandbox: LocalEvalSandbox
     default_timeout: int = 30
     
     async def execute(
@@ -201,8 +201,9 @@ class SandboxExecutor:
                 result: ExecutionResult = self.sandbox.run_code(execution_code, envs=identity_env)
                 
                 # Build structured result from ExecutionResult
-                stdout = result.stdout if result.logs and result.logs.stdout else ""
-                stderr = result.stderr if result.logs and result.logs.stderr else ""
+                # Use the stdout/stderr properties which handle text extraction from logs
+                stdout = result.stdout or ""
+                stderr = result.stderr or ""
                 
                 # Check for execution failure (infrastructure error)
                 if not result.execution_ok:
@@ -360,7 +361,10 @@ _script = """
 
 try:
     with redirect_stdout(_stdout), redirect_stderr(_stderr):
-        exec(compile(_script, "{script_name}.py", "exec"))
+        # Create globals with __name__ = "__main__" so scripts with
+        # if __name__ == "__main__": blocks execute properly
+        _globals = {{"__name__": "__main__", "__file__": "{script_name}.py"}}
+        exec(compile(_script, "{script_name}.py", "exec"), _globals)
     
     # Return captured output
     output = _stdout.getvalue()
@@ -371,123 +375,6 @@ except Exception as e:
     print(f"Error: {{e}}", file=sys.stderr)
     raise
 '''
-
-
-# =============================================================================
-# Local Python Executor (fallback)
-# =============================================================================
-
-
-@dataclass
-class LocalPythonExecutor:
-    """Execute skill scripts using local Python subprocess.
-    
-    This is a simpler executor that runs scripts via subprocess.
-    Use SandboxExecutor for better isolation.
-    
-    Args:
-        python_executable: Path to Python executable (defaults to "python").
-        default_timeout: Default execution timeout in seconds.
-        env: Environment variables to pass to the subprocess.
-              These are merged with the current environment.
-        use_identity_context: Whether to include identity tokens from the
-              request context as environment variables (default: True).
-    """
-    
-    python_executable: str | Path | None = None
-    default_timeout: int = 30
-    env: dict[str, str] | None = None
-    use_identity_context: bool = True
-    
-    async def execute(
-        self,
-        skill_name: str,
-        script_name: str,
-        script_path: Path,
-        args: list[str],
-        timeout: int | None = None,
-    ) -> ScriptExecutionResult:
-        """Execute a skill script using subprocess."""
-        import os
-        import subprocess
-        
-        timeout = timeout or self.default_timeout
-        python = self.python_executable or "python"
-        
-        cmd = [str(python), str(script_path)] + args
-        
-        # Merge environment variables with current environment
-        exec_env = os.environ.copy()
-        if self.env:
-            exec_env.update(self.env)
-        
-        # Also merge identity environment variables from request context
-        if self.use_identity_context:
-            try:
-                from agent_runtimes.context.identities import get_identity_env
-                identity_env = get_identity_env()
-                if identity_env:
-                    exec_env.update(identity_env)
-                    logger.debug(f"Added identity env vars: {list(identity_env.keys())}")
-            except ImportError:
-                # agent_runtimes not installed, skip identity context
-                pass
-        
-        logger.debug(f"Executing: {' '.join(cmd)}")
-        if self.env:
-            logger.debug(f"With env vars: {list(self.env.keys())}")
-        
-        try:
-            proc = await asyncio.wait_for(
-                asyncio.create_subprocess_exec(
-                    *cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    env=exec_env,
-                ),
-                timeout=timeout,
-            )
-            stdout_bytes, stderr_bytes = await proc.communicate()
-            stdout = stdout_bytes.decode()
-            stderr = stderr_bytes.decode()
-            
-            if proc.returncode != 0:
-                return ScriptExecutionResult(
-                    success=False,
-                    output=stderr or stdout,
-                    stdout=stdout,
-                    stderr=stderr,
-                    execution_ok=True,  # Process ran, just returned non-zero
-                    execution_error=None,
-                    code_error=None,
-                    exit_code=proc.returncode,
-                    error=f"Script exited with code {proc.returncode}",
-                )
-            
-            return ScriptExecutionResult(
-                success=True,
-                output=stdout,
-                stdout=stdout,
-                stderr=stderr,
-                execution_ok=True,
-                execution_error=None,
-                code_error=None,
-                exit_code=proc.returncode,
-                error=None,
-            )
-            
-        except asyncio.TimeoutError:
-            return ScriptExecutionResult(
-                success=False,
-                output="",
-                stdout="",
-                stderr="",
-                execution_ok=False,
-                execution_error=f"Skill script {skill_name}/{script_name} timed out after {timeout}s",
-                code_error=None,
-                exit_code=None,
-                error=f"Timeout after {timeout}s",
-            )
 
 
 # =============================================================================
@@ -570,12 +457,12 @@ class CallableExecutor:
 
 
 # =============================================================================
-# Datalayer Skills Toolset
+# Agent Skills Toolset
 # =============================================================================
 
 
 @dataclass
-class DatalayerSkillResource:
+class AgentSkillResource:
     """A resource file associated with a skill.
     
     Aligned with pydantic-ai's SkillResource from PR #3780.
@@ -594,7 +481,7 @@ class DatalayerSkillResource:
 
 
 @dataclass
-class DatalayerSkillScript:
+class AgentSkillScript:
     """A script that can be executed as part of a skill.
     
     Aligned with pydantic-ai's SkillScript from PR #3780.
@@ -610,7 +497,7 @@ class DatalayerSkillScript:
 
 
 @dataclass
-class DatalayerSkill:
+class AgentSkill:
     """A skill definition compatible with pydantic-ai's Skill.
     
     This extends the pydantic-ai Skill model with Datalayer-specific features
@@ -618,10 +505,10 @@ class DatalayerSkill:
     
     Example:
         # From filesystem (SKILL.md)
-        skill = DatalayerSkill.from_skill_md(path)
+        skill = AgentSkill.from_skill_md(path)
         
         # Programmatic
-        skill = DatalayerSkill(
+        skill = AgentSkill(
             name="my-skill",
             description="Does something useful",
             content="Instructions for the skill...",
@@ -635,8 +522,8 @@ class DatalayerSkill:
     description: str
     content: str = ""
     path: Path | None = None
-    resources: list[DatalayerSkillResource] = field(default_factory=list)
-    scripts: list[DatalayerSkillScript] = field(default_factory=list)
+    resources: list[AgentSkillResource] = field(default_factory=list)
+    scripts: list[AgentSkillScript] = field(default_factory=list)
     
     # Datalayer-specific fields
     tags: list[str] = field(default_factory=list)
@@ -659,7 +546,7 @@ class DatalayerSkill:
         name = func.__name__
         # For callable resources, we store them differently
         # This creates a resource that will be evaluated on read
-        self.resources.append(DatalayerSkillResource(
+        self.resources.append(AgentSkillResource(
             name=name,
             content=None,  # Will be populated dynamically
             path=None,
@@ -676,7 +563,7 @@ class DatalayerSkill:
                 return str(result)
         """
         name = func.__name__
-        self.scripts.append(DatalayerSkillScript(
+        self.scripts.append(AgentSkillScript(
             name=name,
             path=None,
             callable=func,
@@ -685,7 +572,7 @@ class DatalayerSkill:
         return func
     
     @classmethod
-    def from_skill_md(cls, skill_path: Path) -> "DatalayerSkill":
+    def from_skill_md(cls, skill_path: Path) -> "AgentSkill":
         """Load a skill from a SKILL.md file.
         
         Parses YAML frontmatter and discovers resources/scripts.
@@ -754,7 +641,7 @@ class DatalayerSkill:
             if resources_dir.exists():
                 for res_file in resources_dir.iterdir():
                     if res_file.is_file():
-                        resources.append(DatalayerSkillResource(
+                        resources.append(AgentSkillResource(
                             name=f"{resource_dir_name}/{res_file.name}",
                             path=res_file,
                         ))
@@ -763,7 +650,7 @@ class DatalayerSkill:
         for res_name in ["REFERENCE.md", "FORMS.md", "TEMPLATES.md"]:
             res_path = skill_path / res_name
             if res_path.exists():
-                resources.append(DatalayerSkillResource(
+                resources.append(AgentSkillResource(
                     name=res_name,
                     path=res_path,
                 ))
@@ -773,7 +660,7 @@ class DatalayerSkill:
         scripts_dir = skill_path / "scripts"
         if scripts_dir.exists():
             for script_file in scripts_dir.glob("*.py"):
-                scripts.append(DatalayerSkillScript(
+                scripts.append(AgentSkillScript(
                     name=script_file.stem,
                     path=script_file,
                     description=f"Script: {script_file.name}",
@@ -879,7 +766,7 @@ if PYDANTIC_AI_AVAILABLE:
     SKILL_ARGS_VALIDATOR = SchemaValidator(schema=core_schema.any_schema())
     
     @dataclass
-    class DatalayerSkillsToolset(AbstractToolset):
+    class AgentSkillsToolset(AbstractToolset):
         """Skills toolset for pydantic-ai with Datalayer extensions.
         
         Provides the standard skills tools:
@@ -894,13 +781,13 @@ if PYDANTIC_AI_AVAILABLE:
         - Integration with code-sandboxes
         
         Example:
-            from agent_skills import DatalayerSkillsToolset, SandboxExecutor
+            from agent_skills import AgentSkillsToolset, SandboxExecutor
             from code_sandboxes import LocalEvalSandbox
             from pydantic_ai import Agent
             
             # With sandbox execution
             sandbox = LocalEvalSandbox()
-            toolset = DatalayerSkillsToolset(
+            toolset = AgentSkillsToolset(
                 directories=["./skills"],
                 executor=SandboxExecutor(sandbox),
             )
@@ -912,13 +799,13 @@ if PYDANTIC_AI_AVAILABLE:
         """
         
         directories: list[str | Path] = field(default_factory=list)
-        skills: list[DatalayerSkill] = field(default_factory=list)
-        executor: SandboxExecutor | LocalPythonExecutor | None = None
+        skills: list[AgentSkill] = field(default_factory=list)
+        executor: SandboxExecutor | None = None
         script_timeout: int = 30
         _id: str | None = None
         
         # Internal state
-        _discovered_skills: dict[str, DatalayerSkill] = field(
+        _discovered_skills: dict[str, AgentSkill] = field(
             default_factory=dict, repr=False
         )
         _initialized: bool = field(default=False, repr=False)
@@ -935,7 +822,7 @@ if PYDANTIC_AI_AVAILABLE:
         
         @property
         def label(self) -> str:
-            return "Datalayer Skills Toolset"
+            return "Agent Skills Toolset"
         
         async def _ensure_initialized(self) -> None:
             """Discover skills from directories if not already done."""
@@ -951,7 +838,7 @@ if PYDANTIC_AI_AVAILABLE:
                 # Look for SKILL.md files
                 for skill_md in dir_path.rglob("SKILL.md"):
                     try:
-                        skill = DatalayerSkill.from_skill_md(skill_md)
+                        skill = AgentSkill.from_skill_md(skill_md)
                         if skill.name not in self._discovered_skills:
                             self._discovered_skills[skill.name] = skill
                             logger.debug(f"Discovered skill: {skill.name}")
@@ -1285,7 +1172,7 @@ if PYDANTIC_AI_AVAILABLE:
 
 else:
     # Fallback when pydantic-ai is not available
-    class DatalayerSkillsToolset:  # type: ignore
+    class AgentSkillsToolset:  # type: ignore
         """Placeholder when pydantic-ai is not installed."""
         
         def __init__(self, *args, **kwargs):

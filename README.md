@@ -54,16 +54,16 @@ pip install "pydantic-ai @ git+https://github.com/DougTrajano/pydantic-ai.git@DE
 
 ## Quick Start: Pydantic AI SkillsToolset (Recommended)
 
-The recommended pattern for using agent-skills with Pydantic AI agents is via `DatalayerSkillsToolset`.
+The recommended pattern for using agent-skills with Pydantic AI agents is via `AgentSkillsToolset`.
 
 ```python
 from pydantic_ai import Agent
-from agent_skills import DatalayerSkillsToolset, SandboxExecutor
+from agent_skills import AgentSkillsToolset, SandboxExecutor
 from code_sandboxes import LocalEvalSandbox
 
 # Create toolset with sandbox execution
 sandbox = LocalEvalSandbox()
-toolset = DatalayerSkillsToolset(
+toolset = AgentSkillsToolset(
     directories=["./skills"],
     executor=SandboxExecutor(sandbox),
 )
@@ -86,10 +86,10 @@ agent = Agent(
 Define skills in Python code with decorators:
 
 ```python
-from agent_skills import DatalayerSkill, DatalayerSkillsToolset
+from agent_skills import AgentSkill, AgentSkillsToolset
 
 # Create a skill
-skill = DatalayerSkill(
+skill = AgentSkill(
     name="data-analyzer",
     description="Analyzes datasets and provides insights",
     content="Use this skill to analyze CSV and JSON data files.",
@@ -109,7 +109,7 @@ def get_reference() -> str:
     return "Reference documentation..."
 
 # Use with agent
-toolset = DatalayerSkillsToolset(skills=[skill])
+toolset = AgentSkillsToolset(skills=[skill])
 ```
 
 ### SKILL.md Format

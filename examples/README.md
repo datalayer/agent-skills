@@ -42,4 +42,4 @@ See [simple/README.md](simple/README.md) for details.
 For skills integrated with Agent Codemode (code-first tool composition), see:
 - [agent-codemode/examples/skills/](https://github.com/datalayer/agent-codemode/tree/main/examples/skills)
 
-This demonstrates using `DatalayerSkillsToolset` alongside `CodemodeToolset` for agents with both MCP tools and skills.
+This demonstrates using `AgentSkillsToolset` alongside `CodemodeToolset` for agents with both MCP tools and skills.

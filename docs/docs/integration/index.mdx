@@ -5,11 +5,11 @@ sidebar_position: 1
 
 # Skills Integration
 
-Agent Skills integrates seamlessly with Pydantic AI agents via `DatalayerSkillsToolset`.
+Agent Skills integrates seamlessly with Pydantic AI agents via `AgentSkillsToolset`.
 
 ## Overview
 
-The `DatalayerSkillsToolset` exposes skills as tools that AI agents can use:
+The `AgentSkillsToolset` exposes skills as tools that AI agents can use:
 
 - `list_skills()` - List available skills
 - `load_skill(skill_name)` - Get full skill instructions
@@ -41,14 +41,14 @@ Skills are modular packages with instructions, resources, and scripts.
 
 ```python
 from pydantic_ai import Agent
-from agent_skills import DatalayerSkillsToolset, SandboxExecutor
+from agent_skills import AgentSkillsToolset, SandboxExecutor
 from code_sandboxes import LocalEvalSandbox
 
 # Create sandbox for execution
 sandbox = LocalEvalSandbox()
 
 # Create toolset
-toolset = DatalayerSkillsToolset(
+toolset = AgentSkillsToolset(
     directories=["./skills"],
     executor=SandboxExecutor(sandbox),
 )
@@ -67,7 +67,7 @@ print(result.output)
 ## Toolset Configuration
 
 ```python
-toolset = DatalayerSkillsToolset(
+toolset = AgentSkillsToolset(
     directories=["./skills", "./shared-skills"],  # Multiple directories
     executor=SandboxExecutor(sandbox),             # Execution backend
     include_resources=True,                        # Enable resource access
@@ -156,10 +156,10 @@ Execute a skill script:
 Define skills in code with decorators:
 
 ```python
-from agent_skills import DatalayerSkill
+from agent_skills import AgentSkill
 
 # Create a skill
-skill = DatalayerSkill(
+skill = AgentSkill(
     name="data-analyzer",
     description="Analyzes datasets and provides insights",
     content="Use this skill to analyze CSV and JSON data files.",
@@ -197,7 +197,7 @@ def get_reference() -> str:
     """
 
 # Register with toolset
-toolset = DatalayerSkillsToolset(
+toolset = AgentSkillsToolset(
     skills=[skill],
     executor=SandboxExecutor(sandbox),
 )
@@ -317,7 +317,7 @@ async def process(ctx, path: str) -> str:
 Configure dependencies in the toolset:
 
 ```python
-toolset = DatalayerSkillsToolset(
+toolset = AgentSkillsToolset(
     skills=[skill],
     executor=executor,
     deps={
@@ -334,10 +334,10 @@ Use skills alongside other toolsets:
 ```python
 from pydantic_ai import Agent
 from pydantic_ai_slim.pydantic_ai.mcp import MCPServerStdio
-from agent_skills import DatalayerSkillsToolset
+from agent_skills import AgentSkillsToolset
 
 # Skills toolset
-skills_toolset = DatalayerSkillsToolset(
+skills_toolset = AgentSkillsToolset(
     directories=["./skills"],
     executor=executor,
 )
@@ -360,17 +360,17 @@ agent = Agent(
 
 For skills integrated with Agent Codemode (code-first tool composition), see the [Agent Codemode skills example](https://github.com/datalayer/agent-codemode/tree/main/examples/skills).
 
-This demonstrates using `DatalayerSkillsToolset` alongside `CodemodeToolset`:
+This demonstrates using `AgentSkillsToolset` alongside `CodemodeToolset`:
 
 ```python
 from agent_codemode import CodemodeToolset, ToolRegistry, CodeModeConfig
-from agent_skills import DatalayerSkillsToolset
+from agent_skills import AgentSkillsToolset
 
 # Codemode toolset for MCP tools
 codemode_toolset = CodemodeToolset(registry=registry, config=config)
 
 # Skills toolset for skill discovery and execution
-skills_toolset = DatalayerSkillsToolset(directories=["./skills"])
+skills_toolset = AgentSkillsToolset(directories=["./skills"])
 
 # Use both with pydantic-ai
 agent = Agent(

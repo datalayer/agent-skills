@@ -10,28 +10,27 @@ from pathlib import Path
 from code_sandboxes import CodeError, ExecutionResult, Logs, OutputMessage
 
 from agent_skills import (
-    DatalayerSkillsToolset,
-    DatalayerSkill,
-    DatalayerSkillResource,
-    DatalayerSkillScript,
+    AgentSkillsToolset,
+    AgentSkill,
+    AgentSkillResource,
+    AgentSkillScript,
     SandboxExecutor,
-    LocalPythonExecutor,
     CallableExecutor,
     PYDANTIC_AI_AVAILABLE,
 )
 
 
 # =============================================================================
-# Tests for DatalayerSkill
+# Tests for AgentSkill
 # =============================================================================
 
 
-class TestDatalayerSkill:
-    """Tests for DatalayerSkill class."""
+class TestAgentSkill:
+    """Tests for AgentSkill class."""
     
     def test_create_skill(self):
         """Test creating a skill programmatically."""
-        skill = DatalayerSkill(
+        skill = AgentSkill(
             name="test-skill",
             description="A test skill",
             content="Instructions for the skill...",
@@ -43,7 +42,7 @@ class TestDatalayerSkill:
     
     def test_skill_decorator_script(self):
         """Test adding a script via decorator."""
-        skill = DatalayerSkill(
+        skill = AgentSkill(
             name="decorated-skill",
             description="Skill with decorated script",
         )
@@ -59,7 +58,7 @@ class TestDatalayerSkill:
     
     def test_skill_decorator_resource(self):
         """Test adding a resource via decorator."""
-        skill = DatalayerSkill(
+        skill = AgentSkill(
             name="resource-skill",
             description="Skill with resource",
         )
@@ -73,7 +72,7 @@ class TestDatalayerSkill:
     
     def test_skill_get_skills_header(self):
         """Test getting skill header for system prompt."""
-        skill = DatalayerSkill(
+        skill = AgentSkill(
             name="my-skill",
             description="Does something useful",
         )
@@ -85,12 +84,12 @@ class TestDatalayerSkill:
     
     def test_skill_get_full_content(self):
         """Test getting full skill content."""
-        skill = DatalayerSkill(
+        skill = AgentSkill(
             name="full-skill",
             description="A complete skill",
             content="Detailed instructions here.",
-            resources=[DatalayerSkillResource(name="ref.md")],
-            scripts=[DatalayerSkillScript(name="run")],
+            resources=[AgentSkillResource(name="ref.md")],
+            scripts=[AgentSkillScript(name="run")],
             allowed_tools=["filesystem__read_file"],
             denied_tools=["network__fetch"],
         )
@@ -107,7 +106,7 @@ class TestDatalayerSkill:
         assert "Detailed instructions here." in content
 
 
-class TestDatalayerSkillFromFile:
+class TestAgentSkillFromFile:
     """Tests for loading skills from SKILL.md files."""
     
     @pytest.fixture
@@ -160,7 +159,7 @@ def process(data):
     
     def test_load_skill_from_skill_md(self, skill_dir: Path):
         """Test loading a skill from SKILL.md."""
-        skill = DatalayerSkill.from_skill_md(skill_dir)
+        skill = AgentSkill.from_skill_md(skill_dir)
         
         assert skill.name == "test-skill"
         assert skill.description == "A test skill from file"
@@ -176,7 +175,7 @@ def process(data):
     
     def test_load_skill_discovers_resources(self, skill_dir: Path):
         """Test that resources are discovered."""
-        skill = DatalayerSkill.from_skill_md(skill_dir)
+        skill = AgentSkill.from_skill_md(skill_dir)
         
         assert len(skill.resources) >= 1
         resource_names = [r.name for r in skill.resources]
@@ -184,7 +183,7 @@ def process(data):
     
     def test_load_skill_discovers_scripts(self, skill_dir: Path):
         """Test that scripts are discovered."""
-        skill = DatalayerSkill.from_skill_md(skill_dir)
+        skill = AgentSkill.from_skill_md(skill_dir)
         
         assert len(skill.scripts) >= 1
         script_names = [s.name for s in skill.scripts]
@@ -232,38 +231,8 @@ class TestCallableExecutor:
         assert result == "Sync: value"
 
 
-class TestLocalPythonExecutor:
-    """Tests for LocalPythonExecutor."""
-    
-    @pytest.fixture
-    def script_file(self, tmp_path: Path) -> Path:
-        """Create a simple test script."""
-        script = tmp_path / "test_script.py"
-        script.write_text("""
-import sys
-print(f"Hello from script! Args: {sys.argv[1:]}")
-""")
-        return script
-    
-    @pytest.mark.asyncio
-    async def test_execute_script(self, script_file: Path):
-        """Test executing a Python script."""
-        executor = LocalPythonExecutor(default_timeout=10)
-        
-        result = await executor.execute(
-            skill_name="test",
-            script_name="test_script",
-            script_path=script_file,
-            args=["arg1", "arg2"],
-        )
-
-        assert result["success"] is True
-        assert "Hello from script" in result["output"]
-        assert "arg1" in result["output"]
-
-
 # =============================================================================
-# Tests for DatalayerSkillsToolset (requires pydantic-ai)
+# Tests for AgentSkillsToolset (requires pydantic-ai)
 # =============================================================================
 
 
@@ -271,8 +240,8 @@ print(f"Hello from script! Args: {sys.argv[1:]}")
     not PYDANTIC_AI_AVAILABLE,
     reason="pydantic-ai with skills support not installed"
 )
-class TestDatalayerSkillsToolset:
-    """Tests for DatalayerSkillsToolset."""
+class TestAgentSkillsToolset:
+    """Tests for AgentSkillsToolset."""
     
     @pytest.fixture
     def skills_directory(self, tmp_path: Path) -> Path:
@@ -311,7 +280,7 @@ Instructions for skill two.
     @pytest.mark.asyncio
     async def test_toolset_initialization(self, skills_directory: Path):
         """Test toolset initializes and discovers skills."""
-        toolset = DatalayerSkillsToolset(
+        toolset = AgentSkillsToolset(
             directories=[str(skills_directory)],
         )
         
@@ -324,7 +293,7 @@ Instructions for skill two.
     @pytest.mark.asyncio
     async def test_list_skills(self, skills_directory: Path):
         """Test list_skills tool."""
-        toolset = DatalayerSkillsToolset(
+        toolset = AgentSkillsToolset(
             directories=[str(skills_directory)],
         )
         
@@ -339,7 +308,7 @@ Instructions for skill two.
     @pytest.mark.asyncio
     async def test_load_skill(self, skills_directory: Path):
         """Test load_skill tool."""
-        toolset = DatalayerSkillsToolset(
+        toolset = AgentSkillsToolset(
             directories=[str(skills_directory)],
         )
         
@@ -353,7 +322,7 @@ Instructions for skill two.
     @pytest.mark.asyncio
     async def test_load_skill_not_found(self, skills_directory: Path):
         """Test load_skill with non-existent skill."""
-        toolset = DatalayerSkillsToolset(
+        toolset = AgentSkillsToolset(
             directories=[str(skills_directory)],
         )
         
@@ -365,7 +334,7 @@ Instructions for skill two.
     @pytest.mark.asyncio
     async def test_toolset_with_programmatic_skills(self):
         """Test toolset with programmatically defined skills."""
-        skill = DatalayerSkill(
+        skill = AgentSkill(
             name="programmatic-skill",
             description="A skill defined in code",
             content="Use this skill for testing.",
@@ -375,7 +344,7 @@ Instructions for skill two.
         async def run(data: str) -> str:
             return f"Executed: {data}"
         
-        toolset = DatalayerSkillsToolset(
+        toolset = AgentSkillsToolset(
             skills=[skill],
         )
         
@@ -389,12 +358,12 @@ Instructions for skill two.
     @pytest.mark.asyncio
     async def test_get_instructions(self):
         """Test get_instructions for system prompt."""
-        skill = DatalayerSkill(
+        skill = AgentSkill(
             name="test-skill",
             description="A test skill",
         )
         
-        toolset = DatalayerSkillsToolset(skills=[skill])
+        toolset = AgentSkillsToolset(skills=[skill])
         toolset._discovered_skills["test-skill"] = skill
         
         instructions = await toolset.get_instructions()
@@ -505,10 +474,10 @@ class TestPydanticAIIntegration:
     def test_toolset_import(self):
         """Test that toolset can be imported with pydantic-ai."""
         from pydantic_ai import Agent
-        from agent_skills import DatalayerSkillsToolset
+        from agent_skills import AgentSkillsToolset
         
         # Should not raise
-        toolset = DatalayerSkillsToolset()
+        toolset = AgentSkillsToolset()
         assert toolset is not None
     
     @pytest.mark.asyncio
@@ -526,7 +495,7 @@ description: Test skill
 Content here.
 """)
         
-        toolset = DatalayerSkillsToolset(
+        toolset = AgentSkillsToolset(
             directories=[str(tmp_path / "skills")],
         )
         

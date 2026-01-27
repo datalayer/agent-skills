@@ -36,7 +36,7 @@ Agent Skills is the **skill management layer** in the Datalayer AI stack:
 - ✅ Skill search by name, description, tags
 - ✅ SKILL.md format parsing (Claude Code compatible)
 - ✅ Skill versioning and lifecycle management
-- ✅ Pydantic AI toolset integration (DatalayerSkillsToolset)
+- ✅ Pydantic AI toolset integration (AgentSkillsToolset)
 
 **Not Responsible For:**
 - ❌ MCP tool discovery or binding generation (→ agent-codemode)
@@ -142,15 +142,15 @@ async def process_files(directory: str) -> dict:
 
 ### 🚀 Pydantic AI Integration
 
-Use with Pydantic AI agents via `DatalayerSkillsToolset`:
+Use with Pydantic AI agents via `AgentSkillsToolset`:
 
 ```python
 from pydantic_ai import Agent
-from agent_skills import DatalayerSkillsToolset, SandboxExecutor
+from agent_skills import AgentSkillsToolset, SandboxExecutor
 from code_sandboxes import LocalEvalSandbox
 
 sandbox = LocalEvalSandbox()
-toolset = DatalayerSkillsToolset(
+toolset = AgentSkillsToolset(
     directories=["./skills"],
     executor=SandboxExecutor(sandbox),
 )
@@ -172,9 +172,9 @@ agent = Agent(
 Define skills in Python code with decorators:
 
 ```python
-from agent_skills import DatalayerSkill
+from agent_skills import AgentSkill
 
-skill = DatalayerSkill(
+skill = AgentSkill(
     name="data-analyzer",
     description="Analyzes datasets and provides insights",
     content="Use this skill to analyze CSV and JSON data files.",
