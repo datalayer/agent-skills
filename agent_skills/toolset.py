@@ -128,6 +128,11 @@ class SandboxExecutor:
     Uses code-sandboxes (LocalEvalSandbox or remote) to execute
     skill scripts safely with proper isolation.
     
+    When the sandbox is a remote/Jupyter sandbox, skill scripts are
+    executed in a local-eval fallback to avoid deadlock: the Jupyter
+    kernel is already busy processing the tool call that triggered the
+    skill execution and cannot handle a new ``execute_request``.
+    
     Example:
         from code_sandboxes import LocalEvalSandbox
         from agent_skills import SandboxExecutor
@@ -145,6 +150,46 @@ class SandboxExecutor:
     
     sandbox: LocalEvalSandbox
     default_timeout: int = 30
+    _local_fallback: Any = field(default=None, init=False, repr=False)
+
+    def _is_sandbox_remote(self) -> bool:
+        """Check if the sandbox is a remote/Jupyter sandbox.
+
+        Remote sandboxes cannot process a new ``execute_request`` while
+        the current one is running, so skill scripts must be executed
+        locally instead.
+        """
+        sandbox = self.sandbox
+        # ManagedSandbox proxy — check the manager's variant
+        manager = getattr(sandbox, '_manager', None)
+        if manager is not None:
+            return getattr(manager, 'is_jupyter', False)
+        # Direct sandbox — LocalEvalSandbox has _namespaces, Jupyter does not
+        return not hasattr(sandbox, '_namespaces')
+
+    def _get_effective_sandbox(self) -> Any:
+        """Return the sandbox to use for skill script execution.
+
+        For local-eval sandboxes, returns the configured sandbox.
+        For remote/Jupyter sandboxes, returns a local-eval fallback
+        to avoid deadlock (the Jupyter kernel is busy processing the
+        tool call that triggered this execution).
+
+        Skill scripts are self-contained (wrapped in ``exec()`` with
+        a clean namespace), so local execution is safe.
+        """
+        if not self._is_sandbox_remote():
+            return self.sandbox
+
+        if self._local_fallback is None:
+            from code_sandboxes import LocalEvalSandbox
+            self._local_fallback = LocalEvalSandbox()
+            self._local_fallback.start()
+            logger.info(
+                "Created local-eval fallback for skill script execution "
+                "(main sandbox is remote/Jupyter)"
+            )
+        return self._local_fallback
     
     async def execute(
         self,
@@ -195,10 +240,17 @@ class SandboxExecutor:
             pass
         
         try:
+            # Select the effective sandbox (local fallback for Jupyter)
+            effective_sandbox = self._get_effective_sandbox()
+
             # Execute in sandbox - prefer run_code if available (supports envs)
-            if hasattr(self.sandbox, 'run_code'):
-                # Use run_code which supports envs parameter
-                result: ExecutionResult = self.sandbox.run_code(execution_code, envs=identity_env)
+            if hasattr(effective_sandbox, 'run_code'):
+                # Use run_code which supports envs parameter.
+                # Wrap in asyncio.to_thread to avoid blocking the event loop
+                # (important when called from a FastAPI async handler).
+                result: ExecutionResult = await asyncio.to_thread(
+                    effective_sandbox.run_code, execution_code, envs=identity_env
+                )
                 
                 # Build structured result from ExecutionResult
                 # Use the stdout/stderr properties which handle text extraction from logs
@@ -267,16 +319,16 @@ class SandboxExecutor:
                     exit_code=result.exit_code,  # Could be 0 or None
                     error=None,
                 )
-            elif asyncio.iscoroutinefunction(getattr(self.sandbox, 'execute', None)):
+            elif asyncio.iscoroutinefunction(getattr(effective_sandbox, 'execute', None)):
                 result = await asyncio.wait_for(
-                    self.sandbox.execute(execution_code),
+                    effective_sandbox.execute(execution_code),
                     timeout=timeout,
                 )
             else:
                 # Sync sandbox - run in executor
                 loop = asyncio.get_event_loop()
                 result = await asyncio.wait_for(
-                    loop.run_in_executor(None, self.sandbox.execute, execution_code),
+                    loop.run_in_executor(None, effective_sandbox.execute, execution_code),
                     timeout=timeout,
                 )
             
@@ -571,11 +623,196 @@ class AgentSkill:
         ))
         return func
     
+    @staticmethod
+    def _extract_script_schema(script_path: Path) -> dict[str, Any]:
+        """Extract input/output schema from a Python script file.
+
+        Uses AST to parse the file and extract:
+        - Module docstring (usage instructions)
+        - Main function signature (parameters with types)
+        - Return type annotation
+        - Argparse argument definitions
+
+        Args:
+            script_path: Path to a .py script file.
+
+        Returns:
+            Dict with keys: ``description``, ``parameters``, ``returns``,
+            ``usage``, ``env_vars``.
+        """
+        import ast
+        import re
+
+        schema: dict[str, Any] = {
+            "description": "",
+            "parameters": [],
+            "returns": "",
+            "usage": "",
+            "env_vars": [],
+        }
+
+        try:
+            source = script_path.read_text()
+        except Exception:
+            return schema
+
+        # --- Parse the AST ---
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            return schema
+
+        # Module docstring
+        module_doc = ast.get_docstring(tree) or ""
+        if module_doc:
+            # First non-blank line is the summary
+            lines = [l.strip() for l in module_doc.splitlines() if l.strip()]
+            if lines:
+                schema["description"] = lines[0]
+
+            # Extract Usage: line
+            usage_match = re.search(r"Usage:\s*(.+)", module_doc)
+            if usage_match:
+                schema["usage"] = usage_match.group(1).strip()
+
+            # Extract environment variable names
+            env_section = re.search(
+                r"Environment:\s*\n((?:\s+\S+.*\n?)+)", module_doc
+            )
+            if env_section:
+                for env_match in re.finditer(
+                    r"^\s+(\w+)", env_section.group(1), re.MULTILINE
+                ):
+                    schema["env_vars"].append(env_match.group(1))
+
+        # --- Find the main public function ---
+        # Heuristic: first top-level function that doesn't start with '_'
+        # and isn't 'main' or a helper like 'get_*_headers'.
+        main_func: ast.FunctionDef | ast.AsyncFunctionDef | None = None
+        for node in ast.iter_child_nodes(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                name = node.name
+                if (
+                    not name.startswith("_")
+                    and name != "main"
+                    and not name.startswith("get_")
+                    and not name.startswith("format_")
+                ):
+                    main_func = node
+                    break
+
+        if main_func is not None:
+            # Function docstring – often has a richer description
+            func_doc = ast.get_docstring(main_func) or ""
+            if func_doc:
+                first_line = func_doc.splitlines()[0].strip()
+                if first_line and not schema["description"]:
+                    schema["description"] = first_line
+
+                # Parse Google-style "Args:" section from docstring.
+                # Use DOTALL so .*? can span blank lines, stop at next section.
+                args_section = re.search(
+                    r"Args:\s*\n(.*?)(?=\n\s*(?:Returns|Raises|Note|Example|Yields|Attributes):|\Z)",
+                    func_doc,
+                    re.DOTALL,
+                )
+                if args_section:
+                    for param_match in re.finditer(
+                        r"^\s+(\w+)(?:\s*\(([^)]+)\))?:\s*(.+)",
+                        args_section.group(1),
+                        re.MULTILINE,
+                    ):
+                        schema["parameters"].append({
+                            "name": param_match.group(1),
+                            "type": param_match.group(2) or "",
+                            "description": param_match.group(3).strip(),
+                        })
+
+                # Parse "Returns:" section
+                returns_match = re.search(
+                    r"Returns:\s*\n\s+(.+)", func_doc
+                )
+                if returns_match:
+                    schema["returns"] = returns_match.group(1).strip()
+
+            # If no params from docstring, extract from function signature
+            if not schema["parameters"]:
+                for arg in main_func.args.args:
+                    if arg.arg in ("self", "cls"):
+                        continue
+                    param: dict[str, str] = {"name": arg.arg}
+                    if arg.annotation:
+                        param["type"] = ast.unparse(arg.annotation)
+                    schema["parameters"].append(param)
+
+            # Return type annotation
+            if main_func.returns and not schema["returns"]:
+                schema["returns"] = ast.unparse(main_func.returns)
+
+        # --- Extract argparse arguments (covers scripts without a main func) ---
+        argparse_params = AgentSkill._extract_argparse_args(tree)
+        if argparse_params and not schema["parameters"]:
+            schema["parameters"] = argparse_params
+
+        return schema
+
+    @staticmethod
+    def _extract_argparse_args(tree: Any) -> list[dict[str, str]]:
+        """Extract argument definitions from argparse calls in the AST.
+
+        Looks for ``parser.add_argument(...)`` calls and extracts the
+        argument name, type, and help text.
+        """
+        import ast
+
+        params: list[dict[str, str]] = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            if not (
+                isinstance(func, ast.Attribute)
+                and func.attr == "add_argument"
+            ):
+                continue
+
+            # Positional name from first string arg
+            name = ""
+            for a in node.args:
+                if isinstance(a, ast.Constant) and isinstance(a.value, str):
+                    raw = a.value.lstrip("-")
+                    if raw:
+                        name = raw.replace("-", "_")
+                        break
+
+            if not name:
+                continue
+
+            param: dict[str, str] = {"name": name}
+            for kw in node.keywords:
+                if kw.arg == "help" and isinstance(kw.value, ast.Constant):
+                    param["description"] = str(kw.value.value)
+                elif kw.arg == "type" and isinstance(kw.value, ast.Name):
+                    param["type"] = kw.value.id
+                elif kw.arg == "choices":
+                    if isinstance(kw.value, ast.List):
+                        choices = [
+                            str(e.value)
+                            for e in kw.value.elts
+                            if isinstance(e, ast.Constant)
+                        ]
+                        param["choices"] = ", ".join(choices)
+            params.append(param)
+
+        return params
+
     @classmethod
     def from_skill_md(cls, skill_path: Path) -> "AgentSkill":
         """Load a skill from a SKILL.md file.
         
         Parses YAML frontmatter and discovers resources/scripts.
+        Script descriptions are enriched by reading each script file
+        to extract input/output schemas via AST analysis.
         
         Args:
             skill_path: Path to SKILL.md file or skill directory.
@@ -655,15 +892,39 @@ class AgentSkill:
                     path=res_path,
                 ))
         
-        # Discover scripts
+        # Discover scripts and extract schemas from their content
         scripts = []
         scripts_dir = skill_path / "scripts"
         if scripts_dir.exists():
-            for script_file in scripts_dir.glob("*.py"):
+            for script_file in sorted(scripts_dir.glob("*.py")):
+                schema = cls._extract_script_schema(script_file)
+                # Build a rich description from the extracted schema
+                desc_parts = []
+                if schema["description"]:
+                    desc_parts.append(schema["description"])
+                else:
+                    desc_parts.append(f"Script: {script_file.name}")
+                if schema["parameters"]:
+                    param_strs = []
+                    for p in schema["parameters"]:
+                        s = p["name"]
+                        if p.get("type"):
+                            s += f": {p['type']}"
+                        if p.get("description"):
+                            s += f" — {p['description']}"
+                        param_strs.append(s)
+                    desc_parts.append("Parameters: " + "; ".join(param_strs))
+                if schema["returns"]:
+                    desc_parts.append(f"Returns: {schema['returns']}")
+                if schema["env_vars"]:
+                    desc_parts.append(
+                        f"Env: {', '.join(schema['env_vars'])}"
+                    )
+                script_description = ". ".join(desc_parts)
                 scripts.append(AgentSkillScript(
                     name=script_file.stem,
                     path=script_file,
-                    description=f"Script: {script_file.name}",
+                    description=script_description,
                 ))
         
         return cls(
@@ -730,7 +991,10 @@ class AgentSkill:
         if self.scripts:
             lines.append("**Available Scripts:**")
             for script in self.scripts:
-                lines.append(f"- {script.name}")
+                if script.description and script.description != f"Script: {script.name}.py":
+                    lines.append(f"- **{script.name}**: {script.description}")
+                else:
+                    lines.append(f"- {script.name}")
         else:
             lines.append("**Available Scripts:** None")
         
