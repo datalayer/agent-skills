@@ -17,7 +17,7 @@ Each skill should do one thing well:
 # Good: Focused skill
 async def count_words(path: str) -> int:
     """Count words in a file."""
-    from generated.servers.filesystem import read_file
+    from generated.mcp.filesystem import read_file
     content = await read_file({"path": path})
     return len(content.split())
 
@@ -215,7 +215,7 @@ async def resilient_batch(paths: list[str]) -> dict:
     
     Continues processing even if some files fail.
     """
-    from generated.servers.filesystem import read_file
+    from generated.mcp.filesystem import read_file
     
     results = []
     
@@ -302,7 +302,7 @@ async def validated_process(
     Raises:
         ValueError: If inputs are invalid.
     """
-    from generated.servers.filesystem import file_exists
+    from generated.mcp.filesystem import file_exists
     
     # Validate path
     if not path:
@@ -419,7 +419,7 @@ async def test_with_mocked_tools():
     """Test skill with mocked MCP tools."""
     mock_read = AsyncMock(return_value="hello world")
     
-    with patch("generated.servers.filesystem.read_file", mock_read):
+    with patch("generated.mcp.filesystem.read_file", mock_read):
         result = await count_words("/any/path")
         
     assert result == 2

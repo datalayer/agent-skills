@@ -172,7 +172,7 @@ class SkillDirectory:
             code='''
 async def process_batch(input_dir: str, output_dir: str) -> dict:
     from skills.analyze_csv import analyze_csv
-    from generated.servers.filesystem import list_directory
+    from generated.mcp.filesystem import list_directory
     
     entries = await list_directory({"path": input_dir})
     results = []
@@ -243,7 +243,7 @@ async def analyze_csv(file_path: str) -> dict:
     Returns:
         Statistics about the file.
     """
-    from generated.servers.filesystem import read_file
+    from generated.mcp.filesystem import read_file
     
     content = await read_file({"path": file_path})
     lines = content.split("\\n")
@@ -290,7 +290,7 @@ Skills can import and use other skills:
 
 async def batch_analyze(directory: str) -> list:
     from skills.analyze_csv import analyze_csv
-    from generated.servers.filesystem import list_directory
+    from generated.mcp.filesystem import list_directory
     
     entries = await list_directory({"path": directory})
     results = []

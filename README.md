@@ -178,7 +178,7 @@ async def analyze_csv(file_path: str) -> dict:
     Returns:
         Statistics about the file.
     """
-    from generated.servers.filesystem import read_file
+    from generated.mcp.filesystem import read_file
     
     content = await read_file({"path": file_path})
     lines = content.split("\n")
@@ -208,7 +208,7 @@ skills.create(
     name="analyze_csv",
     code='''
 async def analyze_csv(file_path: str) -> dict:
-    from generated.servers.filesystem import read_file
+    from generated.mcp.filesystem import read_file
     
     content = await read_file({"path": file_path})
     lines = content.split("\\n")
@@ -271,7 +271,7 @@ async def batch_analyze(directory: str) -> list:
         List of analysis results.
     """
     from skills.analyze_csv import analyze_csv
-    from generated.servers.filesystem import list_directory
+    from generated.mcp.filesystem import list_directory
     
     entries = await list_directory({"path": directory})
     results = []
@@ -362,7 +362,7 @@ async def main_function(param1: str, param2: int = 10) -> dict:
         Dictionary with results.
     """
     # Import tools and other skills
-    from generated.servers.filesystem import read_file
+    from generated.mcp.filesystem import read_file
     from skills.helper_skill import helper_function
     
     # Do the work

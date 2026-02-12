@@ -112,7 +112,7 @@ async def analyze_directory(path: str) -> dict:
     Returns:
         Analysis results with file counts and sizes.
     """
-    from generated.servers.filesystem import list_directory, read_file
+    from generated.mcp.filesystem import list_directory, read_file
     
     entries = await list_directory({"path": path})
     

@@ -53,7 +53,7 @@ def generate_skill_file(
             name="analyze_csv",
             description="Analyze a CSV file and return statistics",
             code='''
-                from generated.servers.filesystem import read_file
+                from generated.mcp.filesystem import read_file
                 content = await read_file({"path": file_path})
                 lines = content.split("\\n")
                 return {"rows": len(lines), "columns": len(lines[0].split(","))}
@@ -214,7 +214,7 @@ def generate_skill_from_template(
         "file_processor": {
             "description": "Process files in a directory",
             "code": '''
-from generated.servers.filesystem import read_file, write_file, list_directory
+from generated.mcp.filesystem import read_file, write_file, list_directory
 
 entries = await list_directory({"path": input_dir})
 results = []
@@ -239,7 +239,7 @@ return {"processed": len(results), "files": results}
         "api_fetcher": {
             "description": "Fetch data from an API with retry",
             "code": '''
-from generated.servers.bash import execute
+from generated.mcp.bash import execute
 import json
 
 # Use curl to fetch data (bash tool)
@@ -268,7 +268,7 @@ start = datetime.now()
 while True:
     # Check condition
     if check_command:
-        from generated.servers.bash import execute
+        from generated.mcp.bash import execute
         result = await execute({"command": check_command})
         if expected_output in result.get("stdout", ""):
             return {"success": True, "waited_seconds": (datetime.now() - start).seconds}

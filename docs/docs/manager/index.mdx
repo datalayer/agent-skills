@@ -60,7 +60,7 @@ skill = manager.create(
     python_code='''
 async def process(path: str) -> dict:
     """Process a data file."""
-    from generated.servers.filesystem import read_file
+    from generated.mcp.filesystem import read_file
     content = await read_file({"path": path})
     return {"size": len(content)}
 ''',
