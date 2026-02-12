@@ -325,7 +325,7 @@ Instructions for skill two.
         toolset = AgentSkillsToolset(
             directories=[str(skills_directory)],
         )
-        
+
         await toolset._ensure_initialized()
         result = toolset._load_skill("nonexistent")
         
