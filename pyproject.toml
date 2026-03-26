@@ -46,6 +46,15 @@ path = "agent_skills/__version__.py"
 [tool.hatch.metadata]
 allow-direct-references = true
 
+[tool.hatch.build.targets.wheel]
+packages = ["agent_skills"]
+# Include all non-Python data files (SKILL.md, scripts, etc.) from skills/
+artifacts = [
+  "agent_skills/skills/**/*.md",
+  "agent_skills/skills/**/*.txt",
+  "agent_skills/skills/**/scripts/*.py",
+]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 filterwarnings = [
