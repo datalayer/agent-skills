@@ -88,15 +88,16 @@ versions = manager.list_versions(skill.skill_id)
 ### 6. Skills as Code Files
 
 ```python
-from agent_skills.simple import SimpleSkillsManager, SimpleSkill
+from agent_skills import SkillsManager
 
-manager = SimpleSkillsManager("./skills")
-skill = SimpleSkill(
+manager = SkillsManager("./skills")
+manager.create(
     name="greet_user",
     description="Return a greeting",
-    code='async def greet_user(name: str) -> dict:\n    return {"message": f"Hello, {name}!"}'
+    content="# Greet User\nReturn a greeting message.",
+    python_code='async def greet_user(name: str) -> dict:\n    return {"message": f"Hello, {name}!"}',
+    tags=["demo"],
 )
-manager.save_skill(skill)
 ```
 
 ### 7. MCP Server

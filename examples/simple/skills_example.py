@@ -350,34 +350,33 @@ Or from the command line:
 
 
 async def example_skills_as_code_files():
-    """Example 6: Skills as Code Files (Simple Manager)."""
-    from agent_skills.simple import SimpleSkillsManager, SimpleSkill
+    """Example 6: Skills as Code Files (SkillsManager)."""
+    from agent_skills import SkillsManager
 
     print("\n" + "=" * 60)
     print("Example 6: Skills as Code Files")
     print("=" * 60)
 
     simple_path = Path("./example_simple_skills")
-    manager = SimpleSkillsManager(str(simple_path))
+    manager = SkillsManager(str(simple_path))
 
-    skill = SimpleSkill(
+    manager.create(
         name="greet_user",
         description="Return a greeting for the provided name.",
-        code='''
+        content="# Greet User\nReturn a greeting for the provided name.",
+        python_code='''
 async def greet_user(name: str) -> dict:
     return {"message": f"Hello, {name}!"}
 ''',
         tags=["demo"],
     )
 
-    manager.save_skill(skill=skill)
-
-    loaded = manager.load_skill("greet_user")
+    loaded = manager.get("greet_user")
     if loaded:
         print(f"Saved skill: {loaded.name}")
         print(f"Description: {loaded.description}")
         print("Code:")
-        print(loaded.code)
+        print(loaded.python_code or "")
 
     shutil.rmtree(simple_path, ignore_errors=True)
 

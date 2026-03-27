@@ -16,48 +16,25 @@ metadata:
 
 # Text Summarizer Skill
 
-## Overview
+## Environment
 
-Use this skill to produce concise summaries of text content. It supports both extractive summarization (selecting key sentences) and simple abstractive summarization (condensing content).
+- None required.
 
-## When to Use
+## Script Inventory
 
-- The user asks for a summary, key points, or TL;DR of a document
-- You need to condense long text before further processing
-- You want to extract the most important sentences from a passage
+### `scripts/summarize.py`
 
-## Quick Start
+- Method: `summarize(text: str, max_sentences: int = 5, method: str = "extractive") -> str`
+- Required CLI params (one of):
+- `--file <path>`
+- `--text <content>`
+- Optional CLI params:
+- `--max-sentences <int>`
+- `--method <extractive|key_points>`
 
-```python
-from agent_skills.skills.text_summarizer import summarize_text
-
-# Extractive summary (select top sentences)
-result = summarize_text(text, max_sentences=5, method="extractive")
-
-# Key points extraction
-result = summarize_text(text, max_sentences=3, method="key_points")
-```
-
-## Available Scripts
-
-### `summarize.py`
-
-Summarize text from a file or stdin.
+## Usage Examples
 
 ```bash
-python scripts/summarize.py --file document.txt --max-sentences 5
-python scripts/summarize.py --text "Long text here..." --method key_points
+python agent_skills/skills/text_summarizer/scripts/summarize.py --file document.txt --max-sentences 5
+python agent_skills/skills/text_summarizer/scripts/summarize.py --text "Long text here" --method key_points --max-sentences 3
 ```
-
-## Methods
-
-| Method | Description |
-|--------|-------------|
-| `extractive` | Selects the most important sentences based on word frequency scoring |
-| `key_points` | Extracts sentences as bullet-point key takeaways |
-
-## Tips
-
-- For very long documents, consider chunking the text first
-- Extractive summarization preserves original wording
-- Use `max_sentences` to control output length

@@ -4,7 +4,7 @@
 
 """Agent Skills - Reusable agent skill management.
 
-This package provides three complementary approaches for managing agent skills:
+This package provides two complementary approaches for managing agent skills:
 
 ## 1. Pydantic AI SkillsToolset (Recommended for Pydantic AI Agents)
 
@@ -61,9 +61,7 @@ async def process_batch(input_dir: str) -> dict:
         description="Process files in batch",
     )
 
-## 3. Managed Skills (Optional)
-
-For advanced use cases like versioning, database storage, or skill registries,
+For lifecycle management, versioning, and registries,
 use the SkillsManager and MCP server.
 
 Example:
@@ -98,15 +96,7 @@ from .helpers import (
     RateLimiter,
 )
 
-# Simple skill management (backward compatible with agent_codemode)
-from .simple import (
-    SimpleSkill,
-    SimpleSkillsManager,
-    SimpleSkillManager,  # Alias for backward compatibility
-    SkillManager,  # Alias for backward compatibility
-)
-
-# Optional: Managed Skills
+# Managed skills lifecycle
 from .manager import SkillsManager
 from .types import (
     Skill,
@@ -137,11 +127,6 @@ from .toolset import (
 __all__ = [
     # Manager
     "SkillsManager",
-    # Simple Manager (backward compatible)
-    "SimpleSkill",
-    "SimpleSkillsManager",
-    "SimpleSkillManager",  # Alias for backward compatibility
-    "SkillManager",  # Alias for backward compatibility
     # Models
     "Skill",
     "SkillMetadata",

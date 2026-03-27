@@ -32,7 +32,7 @@ The `simple/` directory contains a comprehensive example that demonstrates:
 | **Skill Discovery** | Discover and search skills from directories |
 | **Skill Execution** | Execute skills in sandboxes with arguments |
 | **Skill Versioning** | Version management for skills |
-| **Skills as Code** | Simple code file-based skills with SimpleSkillsManager |
+| **Skills as Code** | Code file-based skills managed with SkillsManager |
 | **MCP Server** | Expose skills via MCP protocol |
 
 See [simple/README.md](simple/README.md) for details.
