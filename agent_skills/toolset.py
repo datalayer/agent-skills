@@ -8,25 +8,57 @@ This module provides extensions to pydantic-ai's SkillsToolset with:
 - SandboxExecutor: Execute skill scripts in isolated code-sandboxes
 - AgentSkillsToolset: Extended toolset with Datalayer-specific features
 
-Example:
-    from pydantic_ai import Agent
+There are two ways to load skills into a toolset:
+
+## Path-based loading
+
+Skills live in a local directory tree.  Point the toolset at one or more
+directories; every sub-directory containing a ``SKILL.md`` file is
+automatically discovered::
+
     from agent_skills import AgentSkillsToolset, SandboxExecutor
     from code_sandboxes import LocalEvalSandbox
-    
-    # Create executor with sandbox
-    sandbox = LocalEvalSandbox()
-    executor = SandboxExecutor(sandbox)
-    
-    # Create toolset
-    skills_toolset = AgentSkillsToolset(
-        directories=["./skills"],
-        executor=executor,
+
+    toolset = AgentSkillsToolset(
+        directories=["./skills"],           # scanned recursively for SKILL.md
+        executor=SandboxExecutor(LocalEvalSandbox()),
     )
-    
-    # Use with pydantic-ai agent
-    agent = Agent(
-        model='openai:gpt-4o',
-        toolsets=[skills_toolset],
+
+This is the right pattern when skills are checked into the same repository
+or mounted at a well-known path at runtime.
+
+## Module-based loading
+
+Skills live inside an installed Python package.  Use
+``AgentSkill.from_module()`` to import the package and locate the
+``SKILL.md`` file next to it (works for both regular and namespace
+packages), then pass the results to the toolset via ``skills=``:
+
+    from agent_skills import AgentSkill, AgentSkillsToolset, SandboxExecutor
+    from code_sandboxes import LocalEvalSandbox
+
+    toolset = AgentSkillsToolset(
+        skills=[
+            AgentSkill.from_module("agent_skills.skills.crawl"),
+            AgentSkill.from_module("agent_skills.skills.github"),
+        ],
+        executor=SandboxExecutor(LocalEvalSandbox()),
+    )
+
+This is the right pattern when skills are distributed as part of an
+installed package (e.g. ``agent-skills``) and consumers should not need
+an on-disk copy of the skill directory.
+
+## Both patterns together
+
+The two approaches can be combined freely:
+
+    toolset = AgentSkillsToolset(
+        directories=["./skills"],            # local overrides / custom skills
+        skills=[
+            AgentSkill.from_module("agent_skills.skills.crawl"),
+        ],
+        executor=SandboxExecutor(LocalEvalSandbox()),
     )
 """
 
@@ -1053,8 +1085,8 @@ class AgentSkill:
         func = getattr(mod, method)
         
         # Discover SKILL.md from the package directory
-        mod_file = getattr(mod, "__file__", None)
-        skill_md_path = Path(mod_file).parent / "SKILL.md" if mod_file else None
+        skill_dir = cls._module_dir(mod)
+        skill_md_path = skill_dir / "SKILL.md" if skill_dir else None
         
         if skill_md_path and skill_md_path.exists():
             # Parse the SKILL.md to get all attributes
@@ -1108,7 +1140,76 @@ class AgentSkill:
         )
         
         return skill
-    
+
+    @staticmethod
+    def _module_dir(module: Any) -> Path | None:
+        """Return the directory that contains a module's files.
+
+        Handles both regular packages (``module.__file__`` is set) and
+        **namespace packages** (no ``__init__.py``, so ``__file__`` is
+        ``None`` but ``__spec__.submodule_search_locations`` is populated).
+
+        Args:
+            module: An imported Python module object.
+
+        Returns:
+            Resolved directory ``Path`` or ``None`` if not determinable.
+        """
+        mod_file = getattr(module, "__file__", None)
+        if mod_file:
+            return Path(mod_file).resolve().parent
+        # Namespace package: __file__ is None; use the first search location.
+        locs = getattr(
+            getattr(module, "__spec__", None),
+            "submodule_search_locations",
+            None,
+        )
+        if locs:
+            return Path(locs[0])
+        return None
+
+    @classmethod
+    def from_module(cls, module_name: str) -> "AgentSkill":
+        """Load a skill from a Python module path.
+
+        Imports *module_name*, locates the ``SKILL.md`` file next to the
+        module (works for both regular and namespace packages), and returns
+        the parsed skill.
+
+        This is the canonical loading path for *module-based* skills, i.e.
+        skills stored inside an installed Python package as a directory
+        containing a ``SKILL.md`` file and a ``scripts/`` sub-directory.
+
+        Example::
+
+            skill = AgentSkill.from_module("agent_skills.skills.crawl")
+
+        Args:
+            module_name: Dotted Python module path.
+
+        Returns:
+            Loaded :class:`AgentSkill`.
+
+        Raises:
+            ImportError: If *module_name* cannot be imported.
+            FileNotFoundError: If no ``SKILL.md`` exists next to the module.
+        """
+        import importlib
+
+        module = importlib.import_module(module_name)
+        skill_dir = cls._module_dir(module)
+        if not skill_dir:
+            raise FileNotFoundError(
+                f"Cannot determine directory for module '{module_name}': "
+                "neither __file__ nor __spec__.submodule_search_locations is set"
+            )
+        skill_md = skill_dir / "SKILL.md"
+        if not skill_md.exists():
+            raise FileNotFoundError(
+                f"No SKILL.md found for module '{module_name}' in {skill_dir}"
+            )
+        return cls.from_skill_md(skill_md)
+
     def get_skills_header(self) -> str:
         """Get a brief header for system prompt injection.
         
@@ -1223,34 +1324,47 @@ if PYDANTIC_AI_AVAILABLE:
     @dataclass
     class AgentSkillsToolset(AbstractToolset):
         """Skills toolset for pydantic-ai with Datalayer extensions.
-        
+
         Provides the standard skills tools:
-        - list_skills(): List available skills
-        - load_skill(skill_name): Load full skill content
-        - read_skill_resource(skill_name, resource_name): Read a resource
-        - run_skill_script(skill_name, script_name, args): Execute a script
-        
-        With Datalayer-specific features:
-        - SandboxExecutor for isolated script execution
-        - Support for programmatic skills (decorators)
-        - Integration with code-sandboxes
-        
-        Example:
+
+        - ``list_skills()`` — list available skills
+        - ``load_skill(skill_name)`` — load full skill content
+        - ``read_skill_resource(skill_name, resource_name)`` — read a resource
+        - ``run_skill_script(skill_name, script_name, args)`` — execute a script
+
+        Skills can be supplied via **two complementary mechanisms** that can be
+        combined freely:
+
+        **Path-based** — point ``directories`` at one or more filesystem paths;
+        every sub-directory containing a ``SKILL.md`` file is auto-discovered
+        when the toolset is first used::
+
             from agent_skills import AgentSkillsToolset, SandboxExecutor
             from code_sandboxes import LocalEvalSandbox
             from pydantic_ai import Agent
-            
-            # With sandbox execution
-            sandbox = LocalEvalSandbox()
+
             toolset = AgentSkillsToolset(
                 directories=["./skills"],
-                executor=SandboxExecutor(sandbox),
+                executor=SandboxExecutor(LocalEvalSandbox()),
             )
-            
-            agent = Agent(
-                model='openai:gpt-4o',
-                toolsets=[toolset],
+            agent = Agent(model='openai:gpt-4o', toolsets=[toolset])
+
+        **Module-based** — use ``AgentSkill.from_module()`` to load skills
+        that are packaged inside an installed Python library, then pass them
+        via ``skills=``::
+
+            from agent_skills import AgentSkill, AgentSkillsToolset, SandboxExecutor
+            from code_sandboxes import LocalEvalSandbox
+            from pydantic_ai import Agent
+
+            toolset = AgentSkillsToolset(
+                skills=[
+                    AgentSkill.from_module("my_library.skills.parser"),
+                    AgentSkill.from_module("my_library.skills.formatter"),
+                ],
+                executor=SandboxExecutor(LocalEvalSandbox()),
             )
+            agent = Agent(model='openai:gpt-4o', toolsets=[toolset])
         """
         
         directories: list[str | Path] = field(default_factory=list)

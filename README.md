@@ -55,30 +55,71 @@ pip install "pydantic-ai @ git+https://github.com/DougTrajano/pydantic-ai.git@DE
 ## Quick Start: Pydantic AI SkillsToolset (Recommended)
 
 The recommended pattern for using agent-skills with Pydantic AI agents is via `AgentSkillsToolset`.
+Skills can be loaded in two ways that work independently or together.
+
+### Path-based loading
+
+Point the toolset at a local directory tree.  Every sub-directory that contains
+a `SKILL.md` file is discovered automatically at first use.
+
+Use this when skills are checked into the same repository or mounted at a
+well-known path at runtime:
 
 ```python
 from pydantic_ai import Agent
 from agent_skills import AgentSkillsToolset, SandboxExecutor
 from code_sandboxes import LocalEvalSandbox
 
-# Create toolset with sandbox execution
-sandbox = LocalEvalSandbox()
 toolset = AgentSkillsToolset(
-    directories=["./skills"],
-    executor=SandboxExecutor(sandbox),
+    directories=["./skills"],           # scanned recursively for SKILL.md
+    executor=SandboxExecutor(LocalEvalSandbox()),
 )
 
-# Use with pydantic-ai agent
-agent = Agent(
-    model='openai:gpt-4o',
-    toolsets=[toolset],
+agent = Agent(model='openai:gpt-4o', toolsets=[toolset])
+# Agent gets: list_skills, load_skill, read_skill_resource, run_skill_script
+```
+
+### Module-based loading
+
+Load skills that are packaged inside an installed Python library using
+`AgentSkill.from_module()`.  This handles both regular packages and namespace
+packages (directories without `__init__.py`).
+
+Use this when skills are distributed as part of a pip-installable package
+(such as `agent-skills` itself):
+
+```python
+from pydantic_ai import Agent
+from agent_skills import AgentSkill, AgentSkillsToolset, SandboxExecutor
+from code_sandboxes import LocalEvalSandbox
+
+toolset = AgentSkillsToolset(
+    skills=[
+        AgentSkill.from_module("agent_skills.skills.crawl"),
+        AgentSkill.from_module("agent_skills.skills.github"),
+        AgentSkill.from_module("agent_skills.skills.pdf"),
+        AgentSkill.from_module("agent_skills.skills.events"),
+    ],
+    executor=SandboxExecutor(LocalEvalSandbox()),
 )
 
-# The agent now has access to:
-# - list_skills(): List available skills
-# - load_skill(skill_name): Get full skill instructions
-# - read_skill_resource(skill_name, resource_name): Read skill resources
-# - run_skill_script(skill_name, script_name, args): Execute skill scripts
+agent = Agent(model='openai:gpt-4o', toolsets=[toolset])
+```
+
+### Combining both
+
+The two approaches stack freely — path-based directories and module-based
+skills are merged into a single skill registry:
+
+```python
+toolset = AgentSkillsToolset(
+    directories=["./skills"],           # local / custom skills
+    skills=[
+        AgentSkill.from_module("agent_skills.skills.crawl"),
+        AgentSkill.from_module("agent_skills.skills.github"),
+    ],
+    executor=SandboxExecutor(LocalEvalSandbox()),
+)
 ```
 
 ### Programmatic Skills
