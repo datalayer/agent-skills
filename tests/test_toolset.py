@@ -462,12 +462,11 @@ Instructions for skill two.
             assert output["execution_ok"] is False
             assert output["execution_error"] == "sandbox unavailable"
 
-    class TestSandboxExecutorJupyterFallback:
-        """Tests for SandboxExecutor local-eval fallback on Jupyter sandboxes.
+    class TestSandboxExecutorGetEffectiveSandbox:
+        """Tests for SandboxExecutor._get_effective_sandbox.
 
-        When the sandbox is a remote/Jupyter sandbox, skill scripts are
-        executed in a local-eval fallback to avoid deadlock (the Jupyter
-        kernel is busy processing the tool call that triggered the execution).
+        After fallback removal, _get_effective_sandbox always returns
+        the configured sandbox directly.
         """
 
         class DummyLocalSandbox:
@@ -490,89 +489,20 @@ Instructions for skill two.
 
             def run_code(self, code: str, envs=None) -> ExecutionResult:
                 self.called = True
-                raise RuntimeError("Should not be called — deadlock!")
-
-        def test_is_sandbox_remote_local_eval(self):
-            """Local-eval sandbox (has _namespaces) is not remote."""
-            result = ExecutionResult(logs=Logs())
-            sandbox = self.DummyLocalSandbox(result)
-            executor = SandboxExecutor(sandbox)
-            assert not executor._is_sandbox_remote()
-
-        def test_is_sandbox_remote_jupyter(self):
-            """Jupyter sandbox (no _namespaces) is remote."""
-            sandbox = self.DummyRemoteSandbox()
-            executor = SandboxExecutor(sandbox)
-            assert executor._is_sandbox_remote()
-
-        def test_is_sandbox_remote_managed_sandbox(self):
-            """ManagedSandbox with a Jupyter manager is detected as remote."""
-            class FakeManager:
-                is_jupyter = True
-            class FakeManagedSandbox:
-                _manager = FakeManager()
-            executor = SandboxExecutor(FakeManagedSandbox())
-            assert executor._is_sandbox_remote()
-
-        def test_is_sandbox_remote_managed_sandbox_local(self):
-            """ManagedSandbox with a local-eval manager is not remote."""
-            class FakeManager:
-                is_jupyter = False
-            class FakeManagedSandbox:
-                _manager = FakeManager()
-            executor = SandboxExecutor(FakeManagedSandbox())
-            assert not executor._is_sandbox_remote()
+                return ExecutionResult(logs=Logs())
 
         def test_effective_sandbox_local(self):
-            """Local-eval sandbox is used directly (no fallback)."""
+            """Local-eval sandbox is returned directly."""
             result = ExecutionResult(logs=Logs())
             sandbox = self.DummyLocalSandbox(result)
             executor = SandboxExecutor(sandbox)
             assert executor._get_effective_sandbox() is sandbox
 
-        def test_effective_sandbox_remote_creates_fallback(self):
-            """Remote sandbox triggers creation of a local-eval fallback."""
+        def test_effective_sandbox_remote(self):
+            """Remote sandbox is returned directly (no fallback)."""
             sandbox = self.DummyRemoteSandbox()
             executor = SandboxExecutor(sandbox)
-            effective = executor._get_effective_sandbox()
-            # Should be a different (local-eval) sandbox
-            assert effective is not sandbox
-            assert hasattr(effective, '_namespaces')  # local-eval trait
-            # Cleanup
-            effective.stop()
-
-        def test_effective_sandbox_remote_reuses_fallback(self):
-            """Fallback sandbox is created once and reused."""
-            sandbox = self.DummyRemoteSandbox()
-            executor = SandboxExecutor(sandbox)
-            first = executor._get_effective_sandbox()
-            second = executor._get_effective_sandbox()
-            assert first is second
-            first.stop()
-
-        @pytest.mark.asyncio
-        async def test_execute_with_remote_sandbox_uses_fallback(self, tmp_path: Path):
-            """Skill execution with a remote sandbox uses the local fallback."""
-            script_path = tmp_path / "hello.py"
-            script_path.write_text("print('hello from skill')")
-
-            remote_sandbox = self.DummyRemoteSandbox()
-            executor = SandboxExecutor(remote_sandbox)
-
-            output = await executor.execute(
-                skill_name="test-skill",
-                script_name="hello",
-                script_path=script_path,
-                args=[],
-            )
-
-            # The remote sandbox should NOT have been called
-            assert not remote_sandbox.called
-            # The script should have executed successfully via fallback
-            assert output["success"] is True
-            assert "hello from skill" in output["output"]
-            # Cleanup
-            executor._local_fallback.stop()
+            assert executor._get_effective_sandbox() is sandbox
 
 # Integration Tests
 # =============================================================================

@@ -160,11 +160,6 @@ class SandboxExecutor:
     Uses code-sandboxes (LocalEvalSandbox or remote) to execute
     skill scripts safely with proper isolation.
     
-    When the sandbox is a remote/Jupyter sandbox, skill scripts are
-    executed in a local-eval fallback to avoid deadlock: the Jupyter
-    kernel is already busy processing the tool call that triggered the
-    skill execution and cannot handle a new ``execute_request``.
-    
     Example:
         from code_sandboxes import LocalEvalSandbox
         from agent_skills import SandboxExecutor
@@ -182,46 +177,16 @@ class SandboxExecutor:
     
     sandbox: LocalEvalSandbox
     default_timeout: int = 30
-    _local_fallback: Any = field(default=None, init=False, repr=False)
-
-    def _is_sandbox_remote(self) -> bool:
-        """Check if the sandbox is a remote/Jupyter sandbox.
-
-        Remote sandboxes cannot process a new ``execute_request`` while
-        the current one is running, so skill scripts must be executed
-        locally instead.
-        """
-        sandbox = self.sandbox
-        # ManagedSandbox proxy — check the manager's variant
-        manager = getattr(sandbox, '_manager', None)
-        if manager is not None:
-            return getattr(manager, 'is_jupyter', False)
-        # Direct sandbox — LocalEvalSandbox has _namespaces, Jupyter does not
-        return not hasattr(sandbox, '_namespaces')
 
     def _get_effective_sandbox(self) -> Any:
         """Return the sandbox to use for skill script execution.
 
-        For local-eval sandboxes, returns the configured sandbox.
-        For remote/Jupyter sandboxes, returns a local-eval fallback
-        to avoid deadlock (the Jupyter kernel is busy processing the
-        tool call that triggered this execution).
-
-        Skill scripts are self-contained (wrapped in ``exec()`` with
-        a clean namespace), so local execution is safe.
+        Always returns the configured sandbox directly.  When skills are
+        invoked via the MCP proxy (codemode), the HTTP request arrives on
+        a separate thread so there is no kernel deadlock — the same
+        sandbox (including its environment variables) is safe to use.
         """
-        if not self._is_sandbox_remote():
-            return self.sandbox
-
-        if self._local_fallback is None:
-            from code_sandboxes import LocalEvalSandbox
-            self._local_fallback = LocalEvalSandbox()
-            self._local_fallback.start()
-            logger.info(
-                "Created local-eval fallback for skill script execution "
-                "(main sandbox is remote/Jupyter)"
-            )
-        return self._local_fallback
+        return self.sandbox
     
     async def execute(
         self,
