@@ -5,108 +5,135 @@ sidebar_position: 1
 
 # Skills Discovery
 
-Agent Skills provides comprehensive discovery mechanisms for AI agents to find and use relevant skills.
+Agent Skills provides two ways to load skills into a toolset, plus a search
+API for runtime discovery.
 
-## The Discovery Challenge
+## Loading Skills into a Toolset
 
-When you have many skills available, agents need efficient ways to:
+### Path-based loading
 
-- **Find relevant skills** - Without loading all skill content upfront
-- **Understand capabilities** - Know what each skill can do
-- **Choose the right skill** - Select the best skill for the task
+Point `AgentSkillsToolset` at one or more local directories.  Every
+sub-directory containing a `SKILL.md` file is discovered automatically when
+the toolset is first used.
 
-## Discovery Methods
-
-### Directory-Based Discovery
-
-The `SkillsManager` discovers skills from directories:
+**When to use:** skills checked into the same repository, or mounted at a
+well-known path at runtime (e.g. a Kubernetes shared volume).
 
 ```python
-from agent_skills import SkillsManager
+from agent_skills import AgentSkillsToolset, SandboxExecutor
+from code_sandboxes import LocalEvalSandbox
 
-manager = SkillsManager("./skills")
-
-# Discover all skills in the directory
-skills = manager.discover()
-
-for skill in skills:
-    print(f"{skill.name}: {skill.description}")
-    print(f"  Tags: {skill.metadata.tags}")
-    print(f"  Status: {skill.status}")
-```
-
-### Supported Formats
-
-The manager discovers skills in multiple formats:
-
-| Format | Extension | Description |
-|--------|-----------|-------------|
-| Python | `*.py` | Python files with async functions |
-| SKILL.md | `*.skill.md` | Markdown with YAML frontmatter |
-
-### Directory Structure
-
-```
-skills/
-├── data/
-│   ├── csv_processor.py
-│   ├── json_processor.py
-│   └── transform.py
-├── files/
-│   ├── backup.py
-│   └── search.py
-└── utilities/
-    ├── validation.skill.md
-    └── logging.skill.md
-```
-
-All nested directories are scanned recursively.
-
-## Skill Search
-
-### Basic Search
-
-Search skills by natural language query:
-
-```python
-matches = manager.search("data processing")
-
-for match in matches:
-    print(f"{match.skill.name} (score: {match.score:.2f})")
-    print(f"  {match.skill.description}")
-```
-
-### Search Parameters
-
-```python
-matches = manager.search(
-    query="file operations",   # Natural language query
-    tags=["files"],            # Filter by tags
-    limit=10,                  # Maximum results
+toolset = AgentSkillsToolset(
+    directories=["./skills"],           # scanned recursively for SKILL.md
+    executor=SandboxExecutor(LocalEvalSandbox()),
 )
 ```
 
-### Search Results
+Expected directory layout:
 
-```python
-class SkillSearchResult:
-    skill: Skill          # The matched skill
-    score: float          # Relevance score (0-1)
-    matched_on: list[str] # Fields that matched (name, description, tags, content)
+```
+skills/
+├── pdf-extractor/
+│   ├── SKILL.md
+│   └── scripts/
+│       └── extract.py
+└── data-analyzer/
+    ├── SKILL.md
+    └── scripts/
+        └── analyze.py
 ```
 
-### What Gets Searched
+### Module-based loading
 
-The search looks at:
+Use `AgentSkill.from_module()` to load skills that are packaged inside an
+installed Python library.  Works for both regular packages (with
+`__init__.py`) and **namespace packages** (directories without
+`__init__.py`, where `__file__` is `None`).
 
-- **Skill name** - Exact and partial matches
-- **Description** - Semantic matching
-- **Tags** - Category filtering
-- **Content** - Full-text search in skill body
+**When to use:** skills distributed as part of a pip-installable package,
+such as the built-in skills in `agent-skills` itself.
 
-## Agent Discovery via Toolset
+```python
+from agent_skills import AgentSkill, AgentSkillsToolset, SandboxExecutor
+from code_sandboxes import LocalEvalSandbox
 
-When using `AgentSkillsToolset`, agents have discovery tools:
+toolset = AgentSkillsToolset(
+    skills=[
+        AgentSkill.from_module("agent_skills.skills.crawl"),
+        AgentSkill.from_module("agent_skills.skills.github"),
+        AgentSkill.from_module("agent_skills.skills.pdf"),
+        AgentSkill.from_module("agent_skills.skills.events"),
+    ],
+    executor=SandboxExecutor(LocalEvalSandbox()),
+)
+```
+
+`from_module()` imports the module, resolves its directory, and delegates
+to `AgentSkill.from_skill_md()` — no extra configuration needed.
+
+### Combining both
+
+The two approaches stack freely.  Skills loaded via `skills=` are merged
+with any skills discovered from `directories=`:
+
+```python
+toolset = AgentSkillsToolset(
+    directories=["./skills"],           # local / custom skills
+    skills=[
+        AgentSkill.from_module("agent_skills.skills.crawl"),
+    ],
+    executor=SandboxExecutor(LocalEvalSandbox()),
+)
+```
+
+### In a Kubernetes / SaaS pod
+
+In the Datalayer SaaS deployment the agent-runtimes container runs alongside
+a Jupyter container in the same pod.  The two loading patterns map to the
+two-container architecture as follows:
+
+```
+┌─────────────────────────────── Pod ────────────────────────────────────┐
+│                                                                         │
+│  agent-runtimes :8765                   jupyter :2300                   │
+│  ┌──────────────────────────┐           ┌────────────────────────────┐  │
+│  │  AgentSkillsToolset      │           │  Jupyter Kernel            │  │
+│  │                          │           │  ┌──────────────────────┐  │  │
+│  │  Module-based ──────────►│──reads────►  │ skill script code    │  │  │
+│  │  (agent_skills pip pkg)  │  script   │  │ (sent as string via  │  │  │
+│  │                          │  content  │  │  SandboxExecutor)    │  │  │
+│  │  Path-based ────────────►│──reads────►  └──────────────────────┘  │  │
+│  │  (/mnt/shared-agent/     │  SKILL.md │                            │  │
+│  │   skills/)               │           │  Shared Volume:            │  │
+│  └──────────────────────────┘           │  /mnt/shared-agent/        │  │
+│                                         │  └── skills/  ◄── also     │  │
+│                                         │      accessible here        │  │
+│                                         └────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+- **Module-based** — `agent-skills` is pip-installed in the image → the
+  agent uses `AgentSkill.from_module()` to get skill metadata.  Script
+  code is read from the installed package and sent as a string to the
+  Jupyter kernel via `SandboxExecutor`.
+
+- **Path-based** — the container entrypoint copies
+  `/opt/datalayer/skills/` → `/mnt/shared-agent/skills/` (a Kubernetes
+  `emptyDir` shared by both containers).  Set
+  `AGENT_RUNTIMES_SKILLS_FOLDER=/mnt/shared-agent/skills` so agent-runtimes
+  scans the shared volume for any additional or custom skills.
+
+Regardless of how a skill is *loaded*, **script execution always happens
+inside the Jupyter kernel** — the `SandboxExecutor` reads the script file
+content from the agent-runtimes side and sends it as Python source code to
+the kernel over the Jupyter HTTP API.
+
+---
+
+## Runtime Discovery via the Agent
+
+When `AgentSkillsToolset` is attached to an agent, the agent can discover
+skills dynamically through two built-in tools.
 
 ### list_skills
 
@@ -157,216 +184,6 @@ Get full details for a specific skill:
 }
 ```
 
-## Filtering and Sorting
+The agent calls `list_skills` to browse what is available, then
+`load_skill` to get the full instructions before executing a skill script.
 
-### Filter by Tags
-
-```python
-# Get skills with specific tags
-data_skills = manager.list(tags=["data"])
-file_skills = manager.list(tags=["files", "processing"])
-```
-
-### Filter by Status
-
-```python
-from agent_skills import SkillStatus
-
-# Only active skills
-active = manager.list(status=SkillStatus.ACTIVE)
-
-# Only draft skills
-drafts = manager.list(status=SkillStatus.DRAFT)
-```
-
-### Filter by Tools
-
-Find skills that use specific MCP tools:
-
-```python
-# Skills that use filesystem tools
-fs_skills = [
-    s for s in manager.list()
-    if any("filesystem" in t for t in s.metadata.allowed_tools)
-]
-```
-
-## Skill Metadata
-
-### SKILL.md Metadata
-
-Skills in SKILL.md format include rich metadata:
-
-```markdown
----
-name: data-analyzer
-description: Analyzes datasets and provides insights
-version: 1.2.0
-author: Team Data
-tags:
-  - data
-  - analysis
-  - csv
-allowed-tools:
-  - filesystem__read_file
-  - filesystem__write_file
-context: sandbox
-user-invocable: true
-hooks:
-  before-invoke: "echo 'Starting analysis...'"
-  after-invoke: "echo 'Analysis complete!'"
----
-
-# Data Analyzer
-
-Instructions for using this skill...
-```
-
-### Python File Metadata
-
-Python skills use docstrings and type hints:
-
-```python
-# skills/data_analyzer.py
-"""Data Analyzer - Analyzes datasets and provides insights.
-
-Tags: data, analysis, csv
-Tools: filesystem__read_file, filesystem__write_file
-Version: 1.2.0
-Author: Team Data
-"""
-
-async def analyze(path: str, format: str = "csv") -> dict:
-    """Analyze a data file.
-    
-    Args:
-        path: Path to the file to analyze.
-        format: File format (csv, json, tsv).
-    
-    Returns:
-        Analysis results with row count, column info, etc.
-    """
-    ...
-```
-
-## Discovery Best Practices
-
-### 1. Use Descriptive Names
-
-```python
-# Good: Clear, searchable names
-"csv-data-analyzer"
-"file-backup-manager"
-"json-schema-validator"
-
-# Avoid: Vague names
-"processor"
-"helper"
-"utils"
-```
-
-### 2. Write Good Descriptions
-
-```python
-# Good: Explains what, when, and how
-description="Analyzes CSV files to extract statistics, find patterns, and identify data quality issues. Use for data exploration before processing."
-
-# Avoid: Too brief
-description="Analyzes files"
-```
-
-### 3. Use Tags Consistently
-
-Establish a tagging convention:
-
-```python
-# Category tags
-tags=["data", "files", "web", "database"]
-
-# Action tags
-tags=["analysis", "processing", "validation", "transformation"]
-
-# Format tags
-tags=["csv", "json", "xml", "yaml"]
-```
-
-### 4. Document Tool Dependencies
-
-```python
-# List the tools your skill needs
-allowed_tools=[
-    "filesystem__read_file",
-    "filesystem__write_file",
-    "filesystem__list_directory",
-]
-```
-
-### 5. Version Your Skills
-
-```python
-version="1.2.0"  # Major.Minor.Patch
-```
-
-## Programmatic Discovery
-
-### Custom Discovery Logic
-
-```python
-from pathlib import Path
-from agent_skills import Skill
-
-def discover_custom(directory: str) -> list[Skill]:
-    """Custom skill discovery logic."""
-    skills = []
-    
-    for path in Path(directory).rglob("*.skill.md"):
-        content = path.read_text()
-        skill = Skill.from_skill_md(content)
-        
-        # Custom filtering
-        if skill.status == SkillStatus.ACTIVE:
-            skills.append(skill)
-    
-    return skills
-```
-
-### Registry Pattern
-
-For large skill collections, use a registry:
-
-```python
-from agent_skills import SkillsManager
-
-class SkillRegistry:
-    """Central registry for skill discovery."""
-    
-    def __init__(self):
-        self.managers: dict[str, SkillsManager] = {}
-    
-    def register(self, namespace: str, path: str):
-        """Register a skill namespace."""
-        self.managers[namespace] = SkillsManager(path)
-    
-    def discover_all(self) -> dict[str, list[Skill]]:
-        """Discover skills from all namespaces."""
-        return {
-            ns: mgr.discover()
-            for ns, mgr in self.managers.items()
-        }
-    
-    def search(self, query: str) -> list[SkillSearchResult]:
-        """Search across all namespaces."""
-        results = []
-        for mgr in self.managers.values():
-            results.extend(mgr.search(query))
-        return sorted(results, key=lambda r: r.score, reverse=True)
-
-# Usage
-registry = SkillRegistry()
-registry.register("core", "./skills/core")
-registry.register("data", "./skills/data")
-registry.register("shared", "/shared/skills")
-
-all_skills = registry.discover_all()
-matches = registry.search("file processing")
-```

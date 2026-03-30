@@ -4,31 +4,65 @@
 
 """Agent Skills - Reusable agent skill management.
 
-This package provides three complementary approaches for managing agent skills:
+This package provides two complementary approaches for managing agent skills:
 
 ## 1. Pydantic AI SkillsToolset (Recommended for Pydantic AI Agents)
 
 Build on pydantic-ai's SkillsToolset pattern for progressive disclosure of skills.
 
-Example:
+Skills can be loaded in **two ways** that can be combined:
+
+### Path-based loading
+
+Point ``AgentSkillsToolset`` at one or more directories.  Every sub-directory
+that contains a ``SKILL.md`` file is discovered automatically at first use.
+Use this when skills live in the same repository or are mounted at a known path:
+
     from pydantic_ai import Agent
     from agent_skills import AgentSkillsToolset, SandboxExecutor
     from code_sandboxes import LocalEvalSandbox
-    
-    # Create toolset with sandbox execution
-    sandbox = LocalEvalSandbox()
+
     toolset = AgentSkillsToolset(
-        directories=["./skills"],
-        executor=SandboxExecutor(sandbox),
+        directories=["./skills"],       # scanned recursively for SKILL.md
+        executor=SandboxExecutor(LocalEvalSandbox()),
     )
-    
-    # Use with pydantic-ai agent
-    agent = Agent(
-        model='openai:gpt-4o',
-        toolsets=[toolset],
-    )
-    
+
+    agent = Agent(model='openai:gpt-4o', toolsets=[toolset])
     # Agent gets: list_skills, load_skill, read_skill_resource, run_skill_script
+
+### Module-based loading
+
+Use ``AgentSkill.from_module()`` to load skills packaged inside an installed
+Python library.  Works with both regular packages and namespace packages (no
+``__init__.py``).  Pass the results via ``skills=``.  Use this when skills are
+distributed as part of a pip-installable package:
+
+    from pydantic_ai import Agent
+    from agent_skills import AgentSkill, AgentSkillsToolset, SandboxExecutor
+    from code_sandboxes import LocalEvalSandbox
+
+    toolset = AgentSkillsToolset(
+        skills=[
+            AgentSkill.from_module("agent_skills.skills.crawl"),
+            AgentSkill.from_module("agent_skills.skills.github"),
+            AgentSkill.from_module("agent_skills.skills.pdf"),
+        ],
+        executor=SandboxExecutor(LocalEvalSandbox()),
+    )
+
+    agent = Agent(model='openai:gpt-4o', toolsets=[toolset])
+
+### Combining both
+
+The two approaches stack freely:
+
+    toolset = AgentSkillsToolset(
+        directories=["./skills"],           # local / custom skills
+        skills=[
+            AgentSkill.from_module("agent_skills.skills.crawl"),
+        ],
+        executor=SandboxExecutor(LocalEvalSandbox()),
+    )
 
 ## 2. Skills as Code Files (Primary Pattern)
 
@@ -61,9 +95,7 @@ async def process_batch(input_dir: str) -> dict:
         description="Process files in batch",
     )
 
-## 3. Managed Skills (Optional)
-
-For advanced use cases like versioning, database storage, or skill registries,
+For lifecycle management, versioning, and registries,
 use the SkillsManager and MCP server.
 
 Example:
@@ -98,15 +130,7 @@ from .helpers import (
     RateLimiter,
 )
 
-# Simple skill management (backward compatible with agent_codemode)
-from .simple import (
-    SimpleSkill,
-    SimpleSkillsManager,
-    SimpleSkillManager,  # Alias for backward compatibility
-    SkillManager,  # Alias for backward compatibility
-)
-
-# Optional: Managed Skills
+# Managed skills lifecycle
 from .manager import SkillsManager
 from .types import (
     Skill,
@@ -137,11 +161,6 @@ from .toolset import (
 __all__ = [
     # Manager
     "SkillsManager",
-    # Simple Manager (backward compatible)
-    "SimpleSkill",
-    "SimpleSkillsManager",
-    "SimpleSkillManager",  # Alias for backward compatibility
-    "SkillManager",  # Alias for backward compatibility
     # Models
     "Skill",
     "SkillMetadata",

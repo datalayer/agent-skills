@@ -8,25 +8,57 @@ This module provides extensions to pydantic-ai's SkillsToolset with:
 - SandboxExecutor: Execute skill scripts in isolated code-sandboxes
 - AgentSkillsToolset: Extended toolset with Datalayer-specific features
 
-Example:
-    from pydantic_ai import Agent
+There are two ways to load skills into a toolset:
+
+## Path-based loading
+
+Skills live in a local directory tree.  Point the toolset at one or more
+directories; every sub-directory containing a ``SKILL.md`` file is
+automatically discovered::
+
     from agent_skills import AgentSkillsToolset, SandboxExecutor
     from code_sandboxes import LocalEvalSandbox
-    
-    # Create executor with sandbox
-    sandbox = LocalEvalSandbox()
-    executor = SandboxExecutor(sandbox)
-    
-    # Create toolset
-    skills_toolset = AgentSkillsToolset(
-        directories=["./skills"],
-        executor=executor,
+
+    toolset = AgentSkillsToolset(
+        directories=["./skills"],           # scanned recursively for SKILL.md
+        executor=SandboxExecutor(LocalEvalSandbox()),
     )
-    
-    # Use with pydantic-ai agent
-    agent = Agent(
-        model='openai:gpt-4o',
-        toolsets=[skills_toolset],
+
+This is the right pattern when skills are checked into the same repository
+or mounted at a well-known path at runtime.
+
+## Module-based loading
+
+Skills live inside an installed Python package.  Use
+``AgentSkill.from_module()`` to import the package and locate the
+``SKILL.md`` file next to it (works for both regular and namespace
+packages), then pass the results to the toolset via ``skills=``:
+
+    from agent_skills import AgentSkill, AgentSkillsToolset, SandboxExecutor
+    from code_sandboxes import LocalEvalSandbox
+
+    toolset = AgentSkillsToolset(
+        skills=[
+            AgentSkill.from_module("agent_skills.skills.crawl"),
+            AgentSkill.from_module("agent_skills.skills.github"),
+        ],
+        executor=SandboxExecutor(LocalEvalSandbox()),
+    )
+
+This is the right pattern when skills are distributed as part of an
+installed package (e.g. ``agent-skills``) and consumers should not need
+an on-disk copy of the skill directory.
+
+## Both patterns together
+
+The two approaches can be combined freely:
+
+    toolset = AgentSkillsToolset(
+        directories=["./skills"],            # local overrides / custom skills
+        skills=[
+            AgentSkill.from_module("agent_skills.skills.crawl"),
+        ],
+        executor=SandboxExecutor(LocalEvalSandbox()),
     )
 """
 
@@ -128,11 +160,6 @@ class SandboxExecutor:
     Uses code-sandboxes (LocalEvalSandbox or remote) to execute
     skill scripts safely with proper isolation.
     
-    When the sandbox is a remote/Jupyter sandbox, skill scripts are
-    executed in a local-eval fallback to avoid deadlock: the Jupyter
-    kernel is already busy processing the tool call that triggered the
-    skill execution and cannot handle a new ``execute_request``.
-    
     Example:
         from code_sandboxes import LocalEvalSandbox
         from agent_skills import SandboxExecutor
@@ -150,46 +177,16 @@ class SandboxExecutor:
     
     sandbox: LocalEvalSandbox
     default_timeout: int = 30
-    _local_fallback: Any = field(default=None, init=False, repr=False)
-
-    def _is_sandbox_remote(self) -> bool:
-        """Check if the sandbox is a remote/Jupyter sandbox.
-
-        Remote sandboxes cannot process a new ``execute_request`` while
-        the current one is running, so skill scripts must be executed
-        locally instead.
-        """
-        sandbox = self.sandbox
-        # ManagedSandbox proxy — check the manager's variant
-        manager = getattr(sandbox, '_manager', None)
-        if manager is not None:
-            return getattr(manager, 'is_jupyter', False)
-        # Direct sandbox — LocalEvalSandbox has _namespaces, Jupyter does not
-        return not hasattr(sandbox, '_namespaces')
 
     def _get_effective_sandbox(self) -> Any:
         """Return the sandbox to use for skill script execution.
 
-        For local-eval sandboxes, returns the configured sandbox.
-        For remote/Jupyter sandboxes, returns a local-eval fallback
-        to avoid deadlock (the Jupyter kernel is busy processing the
-        tool call that triggered this execution).
-
-        Skill scripts are self-contained (wrapped in ``exec()`` with
-        a clean namespace), so local execution is safe.
+        Always returns the configured sandbox directly.  When skills are
+        invoked via the MCP proxy (codemode), the HTTP request arrives on
+        a separate thread so there is no kernel deadlock — the same
+        sandbox (including its environment variables) is safe to use.
         """
-        if not self._is_sandbox_remote():
-            return self.sandbox
-
-        if self._local_fallback is None:
-            from code_sandboxes import LocalEvalSandbox
-            self._local_fallback = LocalEvalSandbox()
-            self._local_fallback.start()
-            logger.info(
-                "Created local-eval fallback for skill script execution "
-                "(main sandbox is remote/Jupyter)"
-            )
-        return self._local_fallback
+        return self.sandbox
     
     async def execute(
         self,
@@ -449,11 +446,40 @@ class CallableExecutor:
     
     default_timeout: int = 30
     
+    @staticmethod
+    def _coerce_kwargs(func: Callable, kwargs: dict[str, Any]) -> dict[str, Any]:
+        """Coerce kwargs values to match the function's type annotations."""
+        import inspect
+        sig = inspect.signature(func)
+        coerced = {}
+        for key, value in kwargs.items():
+            if key in sig.parameters:
+                param = sig.parameters[key]
+                annotation = param.annotation
+                if annotation is not inspect.Parameter.empty and isinstance(value, str):
+                    # Handle both real types and string annotations (from __future__)
+                    ann = annotation if isinstance(annotation, type) else None
+                    ann_str = annotation if isinstance(annotation, str) else (
+                        annotation.__name__ if hasattr(annotation, '__name__') else str(annotation)
+                    )
+                    try:
+                        if ann is int or ann_str == 'int':
+                            value = int(value)
+                        elif ann is float or ann_str == 'float':
+                            value = float(value)
+                        elif ann is bool or ann_str == 'bool':
+                            value = value.lower() in ('true', '1', 'yes')
+                    except (ValueError, TypeError):
+                        pass  # Keep as string if coercion fails
+            coerced[key] = value
+        return coerced
+    
     async def execute_callable(
         self,
         func: Callable,
         ctx: Any,
         args: list[str],
+        kwargs: dict[str, Any] | None = None,
         timeout: int | None = None,
     ) -> str:
         """Execute a callable skill script.
@@ -461,44 +487,82 @@ class CallableExecutor:
         Args:
             func: The async callable to execute.
             ctx: RunContext for dependency injection.
-            args: Arguments to pass (parsed as needed).
+            args: Positional arguments to pass (fallback).
+            kwargs: Named keyword arguments (preferred).
             timeout: Execution timeout.
             
         Returns:
             Result as string.
         """
         timeout = timeout or self.default_timeout
+        kwargs = kwargs or {}
         
         # Determine if function takes context
         import inspect
         sig = inspect.signature(func)
         params = list(sig.parameters.keys())
+        has_ctx = params and params[0] in ('ctx', 'context', 'run_context')
+        
+        # Coerce kwargs types based on function signature
+        if kwargs:
+            kwargs = self._coerce_kwargs(func, kwargs)
         
         try:
-            if asyncio.iscoroutinefunction(func):
-                if params and params[0] in ('ctx', 'context', 'run_context'):
-                    result = await asyncio.wait_for(
-                        func(ctx, *args),
-                        timeout=timeout,
-                    )
+            if kwargs:
+                # Preferred path: use keyword arguments
+                if asyncio.iscoroutinefunction(func):
+                    if has_ctx:
+                        result = await asyncio.wait_for(
+                            func(ctx, **kwargs),
+                            timeout=timeout,
+                        )
+                    else:
+                        result = await asyncio.wait_for(
+                            func(**kwargs),
+                            timeout=timeout,
+                        )
                 else:
-                    result = await asyncio.wait_for(
-                        func(*args),
-                        timeout=timeout,
-                    )
+                    import functools
+                    loop = asyncio.get_event_loop()
+                    if has_ctx:
+                        result = await asyncio.wait_for(
+                            loop.run_in_executor(
+                                None, functools.partial(func, ctx, **kwargs)
+                            ),
+                            timeout=timeout,
+                        )
+                    else:
+                        result = await asyncio.wait_for(
+                            loop.run_in_executor(
+                                None, functools.partial(func, **kwargs)
+                            ),
+                            timeout=timeout,
+                        )
             else:
-                # Sync function
-                loop = asyncio.get_event_loop()
-                if params and params[0] in ('ctx', 'context', 'run_context'):
-                    result = await asyncio.wait_for(
-                        loop.run_in_executor(None, func, ctx, *args),
-                        timeout=timeout,
-                    )
+                # Fallback: positional args
+                if asyncio.iscoroutinefunction(func):
+                    if has_ctx:
+                        result = await asyncio.wait_for(
+                            func(ctx, *args),
+                            timeout=timeout,
+                        )
+                    else:
+                        result = await asyncio.wait_for(
+                            func(*args),
+                            timeout=timeout,
+                        )
                 else:
-                    result = await asyncio.wait_for(
-                        loop.run_in_executor(None, func, *args),
-                        timeout=timeout,
-                    )
+                    loop = asyncio.get_event_loop()
+                    if has_ctx:
+                        result = await asyncio.wait_for(
+                            loop.run_in_executor(None, func, ctx, *args),
+                            timeout=timeout,
+                        )
+                    else:
+                        result = await asyncio.wait_for(
+                            loop.run_in_executor(None, func, *args),
+                            timeout=timeout,
+                        )
             
             if isinstance(result, str):
                 return result
@@ -944,6 +1008,173 @@ class AgentSkill:
             metadata=metadata_map or {},
         )
     
+    @classmethod
+    def from_package(
+        cls,
+        package: str,
+        method: str,
+        *,
+        name: str | None = None,
+        description: str | None = None,
+        version: str = "1.0.0",
+        tags: list[str] | None = None,
+        author: str | None = None,
+    ) -> "AgentSkill":
+        """Load a skill from a Python package and method name.
+        
+        This is the variant 2 loading mechanism: the skill is resolved by
+        importing a Python package and locating a callable within it.
+        Attributes such as license, compatibility, allowed-tools, and
+        metadata are discovered from a ``SKILL.md`` file packaged alongside
+        the module (inside the same directory as ``__init__.py``).
+        
+        Args:
+            package: Dotted Python package path (e.g. ``agent_skills.skills.text_summarizer``).
+            method: Name of the callable in the package.
+            name: Skill name override (defaults to SKILL.md frontmatter, then method name).
+            description: Skill description override (defaults to SKILL.md frontmatter, then docstring).
+            version: Skill version fallback.
+            tags: Tags fallback.
+            author: Skill author fallback.
+            
+        Returns:
+            Loaded AgentSkill with the callable attached as a script.
+            
+        Raises:
+            ImportError: If the package cannot be imported.
+            AttributeError: If the method is not found in the package.
+        """
+        import importlib
+        
+        mod = importlib.import_module(package)
+        func = getattr(mod, method)
+        
+        # Discover SKILL.md from the package directory
+        skill_dir = cls._module_dir(mod)
+        skill_md_path = skill_dir / "SKILL.md" if skill_dir else None
+        
+        if skill_md_path and skill_md_path.exists():
+            # Parse the SKILL.md to get all attributes
+            skill = cls.from_skill_md(skill_md_path)
+            # Override with explicit arguments if provided
+            if name:
+                skill.name = name
+            if description:
+                skill.description = description
+                skill.content = description
+            if tags is not None:
+                skill.tags = tags
+            if author is not None:
+                skill.author = author
+            # Attach the callable as a script (in addition to any discovered scripts)
+            skill.scripts.append(AgentSkillScript(
+                name=method,
+                callable=func,
+                description=func.__doc__ or "",
+            ))
+            logger.info(
+                f"Loaded skill from package with SKILL.md: {skill.name} "
+                f"({package}.{method})"
+            )
+            return skill
+        
+        # Fallback: no SKILL.md found, use basic metadata
+        skill_name = name or method
+        skill_description = description or (func.__doc__ or "").strip().split("\n")[0] or f"Skill: {skill_name}"
+        
+        skill = cls(
+            name=skill_name,
+            description=skill_description,
+            content=skill_description,
+            tags=tags or [],
+            version=version,
+            author=author,
+            metadata={},
+        )
+        
+        # Attach the callable as a script
+        skill.scripts.append(AgentSkillScript(
+            name=method,
+            callable=func,
+            description=func.__doc__ or "",
+        ))
+        
+        logger.info(
+            f"Loaded skill from package (no SKILL.md): {skill_name} "
+            f"({package}.{method})"
+        )
+        
+        return skill
+
+    @staticmethod
+    def _module_dir(module: Any) -> Path | None:
+        """Return the directory that contains a module's files.
+
+        Handles both regular packages (``module.__file__`` is set) and
+        **namespace packages** (no ``__init__.py``, so ``__file__`` is
+        ``None`` but ``__spec__.submodule_search_locations`` is populated).
+
+        Args:
+            module: An imported Python module object.
+
+        Returns:
+            Resolved directory ``Path`` or ``None`` if not determinable.
+        """
+        mod_file = getattr(module, "__file__", None)
+        if mod_file:
+            return Path(mod_file).resolve().parent
+        # Namespace package: __file__ is None; use the first search location.
+        locs = getattr(
+            getattr(module, "__spec__", None),
+            "submodule_search_locations",
+            None,
+        )
+        if locs:
+            return Path(locs[0])
+        return None
+
+    @classmethod
+    def from_module(cls, module_name: str) -> "AgentSkill":
+        """Load a skill from a Python module path.
+
+        Imports *module_name*, locates the ``SKILL.md`` file next to the
+        module (works for both regular and namespace packages), and returns
+        the parsed skill.
+
+        This is the canonical loading path for *module-based* skills, i.e.
+        skills stored inside an installed Python package as a directory
+        containing a ``SKILL.md`` file and a ``scripts/`` sub-directory.
+
+        Example::
+
+            skill = AgentSkill.from_module("agent_skills.skills.crawl")
+
+        Args:
+            module_name: Dotted Python module path.
+
+        Returns:
+            Loaded :class:`AgentSkill`.
+
+        Raises:
+            ImportError: If *module_name* cannot be imported.
+            FileNotFoundError: If no ``SKILL.md`` exists next to the module.
+        """
+        import importlib
+
+        module = importlib.import_module(module_name)
+        skill_dir = cls._module_dir(module)
+        if not skill_dir:
+            raise FileNotFoundError(
+                f"Cannot determine directory for module '{module_name}': "
+                "neither __file__ nor __spec__.submodule_search_locations is set"
+            )
+        skill_md = skill_dir / "SKILL.md"
+        if not skill_md.exists():
+            raise FileNotFoundError(
+                f"No SKILL.md found for module '{module_name}' in {skill_dir}"
+            )
+        return cls.from_skill_md(skill_md)
+
     def get_skills_header(self) -> str:
         """Get a brief header for system prompt injection.
         
@@ -995,6 +1226,32 @@ class AgentSkill:
                     lines.append(f"- **{script.name}**: {script.description}")
                 else:
                     lines.append(f"- {script.name}")
+                # Show parameter signature for callable scripts
+                if script.callable is not None:
+                    import inspect
+                    try:
+                        sig = inspect.signature(script.callable)
+                        param_parts = []
+                        for pname, param in sig.parameters.items():
+                            if pname in ('ctx', 'context', 'run_context'):
+                                continue
+                            annotation = param.annotation
+                            if annotation is inspect.Parameter.empty:
+                                type_str = "any"
+                            elif isinstance(annotation, str):
+                                type_str = annotation
+                            elif hasattr(annotation, '__name__'):
+                                type_str = annotation.__name__
+                            else:
+                                type_str = str(annotation)
+                            if param.default is not inspect.Parameter.empty:
+                                param_parts.append(f"{pname}: {type_str} = {param.default!r}")
+                            else:
+                                param_parts.append(f"{pname}: {type_str}")
+                        if param_parts:
+                            lines.append(f"  Parameters (use kwargs): {', '.join(param_parts)}")
+                    except (ValueError, TypeError):
+                        pass
         else:
             lines.append("**Available Scripts:** None")
         
@@ -1032,34 +1289,47 @@ if PYDANTIC_AI_AVAILABLE:
     @dataclass
     class AgentSkillsToolset(AbstractToolset):
         """Skills toolset for pydantic-ai with Datalayer extensions.
-        
+
         Provides the standard skills tools:
-        - list_skills(): List available skills
-        - load_skill(skill_name): Load full skill content
-        - read_skill_resource(skill_name, resource_name): Read a resource
-        - run_skill_script(skill_name, script_name, args): Execute a script
-        
-        With Datalayer-specific features:
-        - SandboxExecutor for isolated script execution
-        - Support for programmatic skills (decorators)
-        - Integration with code-sandboxes
-        
-        Example:
+
+        - ``list_skills()`` — list available skills
+        - ``load_skill(skill_name)`` — load full skill content
+        - ``read_skill_resource(skill_name, resource_name)`` — read a resource
+        - ``run_skill_script(skill_name, script_name, args)`` — execute a script
+
+        Skills can be supplied via **two complementary mechanisms** that can be
+        combined freely:
+
+        **Path-based** — point ``directories`` at one or more filesystem paths;
+        every sub-directory containing a ``SKILL.md`` file is auto-discovered
+        when the toolset is first used::
+
             from agent_skills import AgentSkillsToolset, SandboxExecutor
             from code_sandboxes import LocalEvalSandbox
             from pydantic_ai import Agent
-            
-            # With sandbox execution
-            sandbox = LocalEvalSandbox()
+
             toolset = AgentSkillsToolset(
                 directories=["./skills"],
-                executor=SandboxExecutor(sandbox),
+                executor=SandboxExecutor(LocalEvalSandbox()),
             )
-            
-            agent = Agent(
-                model='openai:gpt-4o',
-                toolsets=[toolset],
+            agent = Agent(model='openai:gpt-4o', toolsets=[toolset])
+
+        **Module-based** — use ``AgentSkill.from_module()`` to load skills
+        that are packaged inside an installed Python library, then pass them
+        via ``skills=``::
+
+            from agent_skills import AgentSkill, AgentSkillsToolset, SandboxExecutor
+            from code_sandboxes import LocalEvalSandbox
+            from pydantic_ai import Agent
+
+            toolset = AgentSkillsToolset(
+                skills=[
+                    AgentSkill.from_module("my_library.skills.parser"),
+                    AgentSkill.from_module("my_library.skills.formatter"),
+                ],
+                executor=SandboxExecutor(LocalEvalSandbox()),
             )
+            agent = Agent(model='openai:gpt-4o', toolsets=[toolset])
         """
         
         directories: list[str | Path] = field(default_factory=list)
@@ -1185,7 +1455,7 @@ if PYDANTIC_AI_AVAILABLE:
                 toolset=self,
                 tool_def=ToolDefinition(
                     name="run_skill_script",
-                    description="Execute a script from a skill with arguments.",
+                    description="Execute a script from a skill. Use 'kwargs' (preferred) to pass named parameters, or 'args' for positional arguments. Call load_skill first to see available scripts and their parameters.",
                     parameters_json_schema={
                         "type": "object",
                         "properties": {
@@ -1200,8 +1470,13 @@ if PYDANTIC_AI_AVAILABLE:
                             "args": {
                                 "type": "array",
                                 "items": {"type": "string"},
-                                "description": "Arguments to pass to the script",
+                                "description": "Positional arguments to pass to the script (deprecated, prefer kwargs)",
                                 "default": [],
+                            },
+                            "kwargs": {
+                                "type": "object",
+                                "description": "Named keyword arguments to pass to the script. Keys are parameter names, values are parameter values. Preferred over positional args.",
+                                "default": {},
                             },
                         },
                         "required": ["skill_name", "script_name"],
@@ -1238,6 +1513,7 @@ if PYDANTIC_AI_AVAILABLE:
                     tool_args.get("skill_name", ""),
                     tool_args.get("script_name", ""),
                     tool_args.get("args", []),
+                    tool_args.get("kwargs", {}),
                     ctx,
                 )
             else:
@@ -1289,6 +1565,7 @@ if PYDANTIC_AI_AVAILABLE:
             skill_name: str,
             script_name: str,
             args: list[str],
+            kwargs: dict[str, Any],
             ctx: RunContext,
         ) -> ScriptExecutionResult:
             """Run a skill script.
@@ -1341,6 +1618,7 @@ if PYDANTIC_AI_AVAILABLE:
                         script.callable,
                         ctx,
                         args,
+                        kwargs,
                         self.script_timeout,
                     )
                     return ScriptExecutionResult(
@@ -1355,12 +1633,18 @@ if PYDANTIC_AI_AVAILABLE:
                         error=None,
                     )
                 elif self.executor and script.path:
-                    # File-based script with executor - returns ScriptExecutionResult
+                    # File-based script: convert kwargs to CLI flags
+                    effective_args = list(args)
+                    if kwargs:
+                        for key, value in kwargs.items():
+                            flag = f"--{key.replace('_', '-')}"
+                            effective_args.append(flag)
+                            effective_args.append(str(value))
                     return await self.executor.execute(
                         skill_name=skill_name,
                         script_name=script_name,
                         script_path=script.path,
-                        args=args,
+                        args=effective_args,
                         timeout=self.script_timeout,
                     )
                 else:
