@@ -1,6 +1,6 @@
 ---
 name: github
-description: GitHub API scripts for repo discovery, repo details, issue listing, and PR listing. Use scripts in scripts/ with required repo/query params and GITHUB_TOKEN.
+description: GitHub API scripts for repository discovery and inspection. Use this skill when listing your repos, inspecting one repo, or listing issues/PRs. Requires GITHUB_TOKEN.
 license: Proprietary. LICENSE.txt has complete terms
 version: 1.0.0
 tags:
@@ -13,64 +13,104 @@ author: Datalayer
 
 # GitHub Skill
 
-## Environment
+Use this skill to call the GitHub scripts through `run_skill_script`.
+
+## Required Environment Variables
 
 - `GITHUB_TOKEN` (required)
 
-## Script Inventory
+## Invocation Contract
 
-### `scripts/list_repos.py`
+- Always call `run_skill_script` with:
+  - `skill_name`: `github`
+  - `script_name`: one of `list_repos`, `get_repo`, `list_issues`, `list_prs`, `search_repos`
+- Pass positional parameters with `args` in exact order.
+- Pass optional flags with `kwargs` using the documented keys below.
+- Do not invent keys. Unknown keys are converted into unknown CLI flags and the script exits with code `2`.
+- For flag-only options, use `args` (for this skill all options expect values, so `kwargs` is fine).
 
-- Method: `list_repos(visibility="all", sort="updated", per_page=100) -> list[dict]`
-- Required CLI params: none
-- Optional CLI params:
-- `--visibility` (`all|public|private`)
-- `--sort` (`updated|created|pushed|full_name`)
-- `--limit`
-- `--format` (`table|json`)
+## Scripts API
 
-### `scripts/get_repo.py`
+### `script_name: list_repos`
 
-- Method: `get_repo(owner: str, repo: str) -> dict`
-- Required CLI params:
-- positional `repo` as `owner/repo`
-- Optional CLI params:
-- `--format` (`table|json`)
+- Purpose: list repositories for the authenticated user.
+- Positional `args`: none.
+- Supported `kwargs`:
+  - `visibility`: `all | public | private`
+  - `sort`: `updated | created | pushed | full_name`
+  - `format`: `table | json`
+  - `limit`: integer
+- Not supported: `per_page` (this causes a CLI error).
 
-### `scripts/list_issues.py`
+### `script_name: get_repo`
 
-- Method: `list_issues(owner: str, repo: str, state="open", per_page=100) -> list[dict]`
-- Required CLI params:
-- positional `repo` as `owner/repo`
-- Optional CLI params:
-- `--state` (`open|closed|all`)
-- `--limit`
-- `--format` (`table|json`)
+- Purpose: get details of one repository.
+- Positional `args`:
+  - `["owner/repo"]`
+- Supported `kwargs`:
+  - `format`: `table | json`
 
-### `scripts/list_prs.py`
+### `script_name: list_issues`
 
-- Method: `list_pull_requests(owner: str, repo: str, state="open", per_page=100) -> list[dict]`
-- Required CLI params:
-- positional `repo` as `owner/repo`
-- Optional CLI params:
-- `--state` (`open|closed|all`)
-- `--limit`
-- `--format` (`table|json`)
+- Purpose: list issues for one repository.
+- Positional `args`:
+  - `["owner/repo"]`
+- Supported `kwargs`:
+  - `state`: `open | closed | all`
+  - `format`: `table | json`
+  - `limit`: integer
 
-### `scripts/search_repos.py`
+### `script_name: list_prs`
 
-- Method: `search_repos(query: str, language=None, user=None, org=None, sort=None, per_page=30) -> tuple[list[dict], int]`
-- Required CLI params:
-- positional `query`
-- Optional CLI params:
-- `--language`
-- `--user`
-- `--org`
-- `--sort` (`stars|forks|updated|best-match`)
-- `--limit`
-- `--format` (`table|json`)
+- Purpose: list pull requests for one repository.
+- Positional `args`:
+  - `["owner/repo"]`
+- Supported `kwargs`:
+  - `state`: `open | closed | all`
+  - `format`: `table | json`
+  - `limit`: integer
 
-## Usage Examples
+### `script_name: search_repos`
+
+- Purpose: search repositories by query and optional qualifiers.
+- Positional `args`:
+  - `["query text"]`
+- Supported `kwargs`:
+  - `language`: string
+  - `user`: string
+  - `org`: string
+  - `sort`: `stars | forks | updated | best-match`
+  - `format`: `table | json`
+  - `limit`: integer
+
+## `run_skill_script` Examples
+
+- List repos (valid):
+
+```json
+{
+  "skill_name": "github",
+  "script_name": "list_repos",
+  "kwargs": {
+    "sort": "updated",
+    "limit": 3,
+    "format": "json"
+  }
+}
+```
+
+- Get one repo:
+
+```json
+{
+  "skill_name": "github",
+  "script_name": "get_repo",
+  "args": ["datalayer/agent-runtimes"],
+  "kwargs": {"format": "json"}
+}
+```
+
+## Direct CLI Examples
 
 ```bash
 python agent_skills/skills/github/scripts/list_repos.py --visibility private --limit 30

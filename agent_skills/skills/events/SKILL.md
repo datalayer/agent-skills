@@ -1,6 +1,6 @@
 ---
 name: events
-description: Event API helper scripts for create/get/list/update operations. Use scripts from scripts/ and provide required event fields and auth environment variables.
+description: Event API helper for create/get/list/update operations against the AI Agents events API. Requires DATALAYER_API_KEY.
 license: Proprietary. LICENSE.txt has complete terms
 version: 1.0.0
 tags:
@@ -12,30 +12,77 @@ author: Datalayer
 
 # Events Skill
 
-## Environment
+## Required Environment Variables
 
 - `DATALAYER_API_KEY` (required)
 - `DATALAYER_AI_AGENTS_URL` (optional, default `https://prod1.datalayer.run`)
 
-## Script Inventory
+## Invocation Contract
 
-### `scripts/event.py`
+- Call `run_skill_script` with:
+  - `skill_name`: `events`
+  - `script_name`: `event`
+- This script uses subcommands, so put the subcommand in `args[0]`.
+- Use `args` for required positional items (for example, `event_id`).
+- Use `kwargs` for optional and named flags.
 
-- Method: `create_event(agent_id, title, kind="generic", status="pending", payload=None, metadata=None)`
-- Method: `get_event(event_id)`
-- Method: `list_events(agent_id=None, kind=None, status=None, limit=50, offset=0)`
-- Method: `update_event(event_id, title=None, kind=None, status=None, payload=None, metadata=None)`
-- CLI subcommands:
-- `create` required params: `--agent-id`, `--title`
-- `get` required params: positional `event_id`
-- `list` required params: none
-- `update` required params: positional `event_id`
-- Optional CLI params:
-- `create`: `--kind`, `--status`, `--payload`, `--metadata`
-- `list`: `--agent-id`, `--kind`, `--status`, `--limit`, `--offset`
-- `update`: `--title`, `--kind`, `--status`, `--payload`, `--metadata`
+## Script API
 
-## Usage Examples
+### `script_name: event`
+
+Subcommands and parameters:
+
+1. `create`
+- `args`: `["create"]`
+- required `kwargs`: `agent_id`, `title`
+- optional `kwargs`: `kind`, `status`, `payload`, `metadata`
+- `payload` and `metadata` must be JSON object strings.
+
+2. `get`
+- `args`: `["get", "<event_id>"]`
+- `kwargs`: none
+
+3. `list`
+- `args`: `["list"]`
+- optional `kwargs`: `agent_id`, `kind`, `status`, `limit`, `offset`
+
+4. `update`
+- `args`: `["update", "<event_id>"]`
+- optional `kwargs`: `title`, `kind`, `status`, `payload`, `metadata`
+- `payload` and `metadata` must be JSON object strings.
+
+## `run_skill_script` Examples
+
+- Create:
+
+```json
+{
+  "skill_name": "events",
+  "script_name": "event",
+  "args": ["create"],
+  "kwargs": {
+    "agent_id": "data-acquisition",
+    "title": "New dataset",
+    "kind": "dataset_ingested",
+    "payload": "{\"dataset\":\"imerg\"}"
+  }
+}
+```
+
+- Update:
+
+```json
+{
+  "skill_name": "events",
+  "script_name": "event",
+  "args": ["update", "evt_123"],
+  "kwargs": {
+    "status": "completed"
+  }
+}
+```
+
+## Direct CLI Examples
 
 ```bash
 python agent_skills/skills/events/scripts/event.py create --agent-id data-acquisition --title "New dataset" --kind dataset_ingested --payload '{"dataset":"imerg"}'
