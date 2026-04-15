@@ -421,6 +421,53 @@ Instructions for skill two.
         assert result["root_error_code"] == 2
         assert "root error code 2" in (result.get("error") or "")
         assert "load_skill(skill_name)" in (result.get("error") or "")
+
+    @pytest.mark.asyncio
+    async def test_run_skill_script_missing_github_token_reason(self, tmp_path: Path):
+        """Missing GITHUB_TOKEN should expose normalized failure_reason + hint."""
+
+        class FakeExecutor:
+            async def execute(self, **kwargs):
+                return {
+                    "success": False,
+                    "output": "",
+                    "stdout": "",
+                    "stderr": "Error: GITHUB_TOKEN environment variable is required",
+                    "execution_ok": True,
+                    "execution_error": "Script exited with code 1",
+                    "code_error": None,
+                    "exit_code": 1,
+                    "error": "Script exited with code 1",
+                }
+
+        script_path = tmp_path / "list_repos.py"
+        script_path.write_text("print('placeholder')")
+
+        skill = AgentSkill(
+            name="github",
+            description="GitHub skill",
+            scripts=[AgentSkillScript(name="list_repos", path=script_path)],
+        )
+
+        toolset = AgentSkillsToolset(skills=[skill], executor=FakeExecutor())
+        await toolset._ensure_initialized()
+
+        class MockCtx:
+            deps = None
+
+        result = await toolset._run_skill_script(
+            "github",
+            "list_repos",
+            [],
+            {},
+            MockCtx(),
+        )
+
+        assert result["success"] is False
+        assert result.get("failure_reason") == "Missing GitHub authentication token (GITHUB_TOKEN)."
+        assert "Connect/provide a GitHub token" in (result.get("recovery_hint") or "")
+        # Concrete stderr should replace generic "Script exited with code X".
+        assert "GITHUB_TOKEN environment variable is required" in (result.get("error") or "")
     
     @pytest.mark.asyncio
     async def test_toolset_with_programmatic_skills(self):

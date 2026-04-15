@@ -133,7 +133,6 @@ class _HelpOnErrorParser(argparse.ArgumentParser):
             "  --sort        updated | created | pushed | full_name  (default: updated)\n"
             "  --format      table | json  (default: table)\n"
             "  --limit       integer — max repos to return\n"
-            "\nDo NOT pass 'per_page' — use 'limit' instead.\n"
         )
         self.print_usage(sys.stderr)
         print(f"\nerror: {message}", file=sys.stderr)
@@ -174,7 +173,11 @@ def main():
     args = parser.parse_args()
 
     try:
-        repos = list_repos(visibility=args.visibility, sort=args.sort)
+        repos = list_repos(
+            visibility=args.visibility,
+            sort=args.sort,
+            per_page=100,
+        )
 
         if args.limit:
             repos = repos[: args.limit]

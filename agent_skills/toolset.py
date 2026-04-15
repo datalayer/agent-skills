@@ -107,6 +107,10 @@ class ScriptExecutionResult(TypedDict, total=False):
 
     # Root failure code surfaced for downstream handling/UI.
     root_error_code: int | None
+
+    # Optional normalized diagnostics for agent-friendly interpretation.
+    failure_reason: str | None
+    recovery_hint: str | None
     
     # Legacy error field for backwards compatibility
     error: str | None
@@ -420,10 +424,27 @@ try:
     
     # Return captured output
     output = _stdout.getvalue()
-    if not output:
-        output = _stderr.getvalue()
-    print(output)
+    if output:
+        print(output, end="")
+    err_output = _stderr.getvalue()
+    if err_output:
+        print(err_output, end="", file=sys.stderr)
+except SystemExit:
+    # Preserve argparse and explicit sys.exit diagnostics captured in stderr.
+    output = _stdout.getvalue()
+    if output:
+        print(output, end="")
+    err_output = _stderr.getvalue()
+    if err_output:
+        print(err_output, end="", file=sys.stderr)
+    raise
 except Exception as e:
+    output = _stdout.getvalue()
+    if output:
+        print(output, end="")
+    err_output = _stderr.getvalue()
+    if err_output:
+        print(err_output, end="", file=sys.stderr)
     print(f"Error: {{e}}", file=sys.stderr)
     raise
 '''
@@ -1780,6 +1801,38 @@ if PYDANTIC_AI_AVAILABLE:
                     if result.get("exit_code") is not None:
                         result["root_error_code"] = result["exit_code"]
 
+                    stderr_text = (result.get("stderr") or "").strip()
+                    error_text = (result.get("error") or "").strip()
+                    exec_error_text = (result.get("execution_error") or "").strip()
+
+                    # Prefer concrete stderr details over generic "Script exited with code X".
+                    if result.get("success") is False and stderr_text:
+                        if not exec_error_text or exec_error_text.startswith("Script exited with code"):
+                            result["execution_error"] = stderr_text
+                        if not error_text or error_text.startswith("Script exited with code"):
+                            result["error"] = stderr_text
+
+                    combined_text = " ".join(
+                        part
+                        for part in [
+                            stderr_text,
+                            str(result.get("execution_error") or "").strip(),
+                            str(result.get("error") or "").strip(),
+                        ]
+                        if part
+                    )
+
+                    if result.get("success") is False and "GITHUB_TOKEN environment variable is required" in combined_text:
+                        result["failure_reason"] = "Missing GitHub authentication token (GITHUB_TOKEN)."
+                        result["recovery_hint"] = (
+                            "Connect/provide a GitHub token in identity context and retry the same script call."
+                        )
+                    elif result.get("success") is False and "Invalid or expired GITHUB_TOKEN" in combined_text:
+                        result["failure_reason"] = "GitHub token is invalid or expired."
+                        result["recovery_hint"] = (
+                            "Refresh GitHub authentication token and retry the same script call."
+                        )
+
                     # Exit code 2 is argparse usage/unknown flag error in skill scripts.
                     if result.get("success") is False and result.get("exit_code") == 2:
                         guidance = (
@@ -1794,6 +1847,10 @@ if PYDANTIC_AI_AVAILABLE:
                         else:
                             result["execution_error"] = guidance
                             result["error"] = guidance
+                        result["failure_reason"] = "Invalid CLI arguments for the selected skill script."
+                        result["recovery_hint"] = (
+                            "Call load_skill(skill_name), then retry run_skill_script with only documented args/kwargs."
+                        )
 
                     return result
                 else:
