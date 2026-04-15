@@ -22,12 +22,26 @@ Use this skill to call the GitHub scripts through `run_skill_script`.
 ## Invocation Contract
 
 - Always call `run_skill_script` with:
-  - `skill_name`: `github`
+  - `skill_name`: `github` (lowercase, exactly as returned by `list_skills`)
   - `script_name`: one of `list_repos`, `get_repo`, `list_issues`, `list_prs`, `search_repos`
 - Pass positional parameters with `args` in exact order.
 - Pass optional flags with `kwargs` using the documented keys below.
 - Do not invent keys. Unknown keys are converted into unknown CLI flags and the script exits with code `2`.
 - For flag-only options, use `args` (for this skill all options expect values, so `kwargs` is fine).
+
+## Common Failure Modes
+
+- `Skill not found: GitHub`: use lowercase `github` as listed by `list_skills`.
+- Exit code `2`: one or more `kwargs` keys do not exist in the script CLI, or a required positional arg is missing. Read the stderr output — it lists all valid parameters. Retry with only those.
+- `Error: GITHUB_TOKEN environment variable is required`: the request context does not include GitHub identity/token.
+- `Error: Invalid or expired GITHUB_TOKEN`: token exists but is invalid/expired.
+
+### Recovery from exit code 2
+
+When a script exits with code `2`, the error output includes a **"Valid parameters"** block listing every accepted flag with types and defaults. Use that list to build a corrected `kwargs`/`args` and retry. Common mistakes:
+- Using `per_page` instead of `limit`.
+- Passing `org` or `user` to `list_repos` (those belong to `search_repos`).
+- Omitting the required positional `query` arg for `search_repos` (use `args: ["<query>"]`).
 
 ## Scripts API
 
@@ -99,6 +113,35 @@ Use this skill to call the GitHub scripts through `run_skill_script`.
 }
 ```
 
+- List private repos only:
+
+```json
+{
+  "skill_name": "github",
+  "script_name": "list_repos",
+  "kwargs": {
+    "visibility": "private",
+    "sort": "updated",
+    "limit": 3
+  }
+}
+```
+
+- Search org repos (note: `query` is a **positional** arg via `args`, `org` is a kwarg):
+
+```json
+{
+  "skill_name": "github",
+  "script_name": "search_repos",
+  "args": ["*"],
+  "kwargs": {
+    "org": "datalayer",
+    "sort": "updated",
+    "limit": 3
+  }
+}
+```
+
 - Get one repo:
 
 ```json
@@ -108,6 +151,22 @@ Use this skill to call the GitHub scripts through `run_skill_script`.
   "args": ["datalayer/agent-runtimes"],
   "kwargs": {"format": "json"}
 }
+```
+
+### Common mistakes (exit code 2)
+
+```json
+// ❌ WRONG — per_page is not a valid kwarg, use limit
+{"skill_name": "github", "script_name": "list_repos", "kwargs": {"per_page": 3}}
+
+// ✅ CORRECT
+{"skill_name": "github", "script_name": "list_repos", "kwargs": {"limit": 3}}
+
+// ❌ WRONG — search_repos requires positional query in args
+{"skill_name": "github", "script_name": "search_repos", "kwargs": {"org": "datalayer"}}
+
+// ✅ CORRECT — pass query text via args
+{"skill_name": "github", "script_name": "search_repos", "args": ["*"], "kwargs": {"org": "datalayer", "limit": 3}}
 ```
 
 ## Direct CLI Examples
