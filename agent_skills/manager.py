@@ -57,7 +57,7 @@ class SkillsManager:
     def __init__(
         self,
         skills_path: str = "./skills",
-        sandbox_variant: str = "local-eval",
+        sandbox_variant: str = "eval",
     ):
         """Initialize the skill manager.
         

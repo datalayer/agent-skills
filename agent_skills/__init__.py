@@ -20,7 +20,7 @@ Use this when skills live in the same repository or are mounted at a known path:
 
     from pydantic_ai import Agent
     from agent_skills import AgentSkillsToolset, SandboxExecutor
-    from code_sandboxes import LocalEvalSandbox
+    from code_sandboxes.eval_sandbox import LocalEvalSandbox
 
     toolset = AgentSkillsToolset(
         directories=["./skills"],       # scanned recursively for SKILL.md
@@ -39,7 +39,7 @@ distributed as part of a pip-installable package:
 
     from pydantic_ai import Agent
     from agent_skills import AgentSkill, AgentSkillsToolset, SandboxExecutor
-    from code_sandboxes import LocalEvalSandbox
+    from code_sandboxes.eval_sandbox import LocalEvalSandbox
 
     toolset = AgentSkillsToolset(
         skills=[

@@ -17,7 +17,7 @@ directories; every sub-directory containing a ``SKILL.md`` file is
 automatically discovered::
 
     from agent_skills import AgentSkillsToolset, SandboxExecutor
-    from code_sandboxes import LocalEvalSandbox
+    from code_sandboxes.eval_sandbox import LocalEvalSandbox
 
     toolset = AgentSkillsToolset(
         directories=["./skills"],           # scanned recursively for SKILL.md
@@ -35,7 +35,7 @@ Skills live inside an installed Python package.  Use
 packages), then pass the results to the toolset via ``skills=``:
 
     from agent_skills import AgentSkill, AgentSkillsToolset, SandboxExecutor
-    from code_sandboxes import LocalEvalSandbox
+    from code_sandboxes.eval_sandbox import LocalEvalSandbox
 
     toolset = AgentSkillsToolset(
         skills=[
@@ -75,7 +75,7 @@ from code_sandboxes import ExecutionResult
 from typing import TypedDict
 
 if TYPE_CHECKING:
-    from code_sandboxes import LocalEvalSandbox
+    from code_sandboxes.eval_sandbox import LocalEvalSandbox
     from pydantic_ai._run_context import RunContext
 
 logger = logging.getLogger(__name__)
@@ -168,7 +168,7 @@ class SandboxExecutor:
     skill scripts safely with proper isolation.
     
     Example:
-        from code_sandboxes import LocalEvalSandbox
+        from code_sandboxes.eval_sandbox import LocalEvalSandbox
         from agent_skills import SandboxExecutor
         
         sandbox = LocalEvalSandbox()
@@ -1405,7 +1405,7 @@ if PYDANTIC_AI_AVAILABLE:
         when the toolset is first used::
 
             from agent_skills import AgentSkillsToolset, SandboxExecutor
-            from code_sandboxes import LocalEvalSandbox
+            from code_sandboxes.eval_sandbox import LocalEvalSandbox
             from pydantic_ai import Agent
 
             toolset = AgentSkillsToolset(
@@ -1419,7 +1419,7 @@ if PYDANTIC_AI_AVAILABLE:
         via ``skills=``::
 
             from agent_skills import AgentSkill, AgentSkillsToolset, SandboxExecutor
-            from code_sandboxes import LocalEvalSandbox
+            from code_sandboxes.eval_sandbox import LocalEvalSandbox
             from pydantic_ai import Agent
 
             toolset = AgentSkillsToolset(

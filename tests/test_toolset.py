@@ -531,7 +531,7 @@ Instructions for skill two.
                 self.result = result
                 self.last_code: str | None = None
                 self.last_envs: dict[str, str] | None = None
-                self._namespaces = {}  # Mark as local-eval-like
+                self._namespaces = {}  # Mark as eval-like
 
             def run_code(self, code: str, envs: dict[str, str] | None = None) -> ExecutionResult:
                 self.last_code = code
@@ -611,7 +611,7 @@ Instructions for skill two.
         """
 
         class DummyLocalSandbox:
-            """Simulates a local-eval sandbox (has ``_namespaces``)."""
+            """Simulates a eval sandbox (has ``_namespaces``)."""
             _namespaces: dict = {}
 
             def __init__(self, result: ExecutionResult):
