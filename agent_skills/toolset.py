@@ -17,11 +17,11 @@ directories; every sub-directory containing a ``SKILL.md`` file is
 automatically discovered::
 
     from agent_skills import AgentSkillsToolset, SandboxExecutor
-    from code_sandboxes.eval_sandbox import LocalEvalSandbox
+    from code_sandboxes.eval_sandbox import EvalSandbox
 
     toolset = AgentSkillsToolset(
         directories=["./skills"],           # scanned recursively for SKILL.md
-        executor=SandboxExecutor(LocalEvalSandbox()),
+        executor=SandboxExecutor(EvalSandbox()),
     )
 
 This is the right pattern when skills are checked into the same repository
@@ -35,14 +35,14 @@ Skills live inside an installed Python package.  Use
 packages), then pass the results to the toolset via ``skills=``:
 
     from agent_skills import AgentSkill, AgentSkillsToolset, SandboxExecutor
-    from code_sandboxes.eval_sandbox import LocalEvalSandbox
+    from code_sandboxes.eval_sandbox import EvalSandbox
 
     toolset = AgentSkillsToolset(
         skills=[
             AgentSkill.from_module("agent_skills.skills.crawl"),
             AgentSkill.from_module("agent_skills.skills.github"),
         ],
-        executor=SandboxExecutor(LocalEvalSandbox()),
+        executor=SandboxExecutor(EvalSandbox()),
     )
 
 This is the right pattern when skills are distributed as part of an
@@ -58,7 +58,7 @@ The two approaches can be combined freely:
         skills=[
             AgentSkill.from_module("agent_skills.skills.crawl"),
         ],
-        executor=SandboxExecutor(LocalEvalSandbox()),
+        executor=SandboxExecutor(EvalSandbox()),
     )
 """
 
@@ -75,7 +75,7 @@ from code_sandboxes import ExecutionResult
 from typing import TypedDict
 
 if TYPE_CHECKING:
-    from code_sandboxes.eval_sandbox import LocalEvalSandbox
+    from code_sandboxes.eval_sandbox import EvalSandbox
     from pydantic_ai._run_context import RunContext
 
 logger = logging.getLogger(__name__)
@@ -164,14 +164,14 @@ class SkillScriptExecutorProtocol(Protocol):
 class SandboxExecutor:
     """Execute skill scripts in an isolated code sandbox.
     
-    Uses code-sandboxes (LocalEvalSandbox or remote) to execute
+    Uses code-sandboxes (EvalSandbox or remote) to execute
     skill scripts safely with proper isolation.
     
     Example:
-        from code_sandboxes.eval_sandbox import LocalEvalSandbox
+        from code_sandboxes.eval_sandbox import EvalSandbox
         from agent_skills import SandboxExecutor
         
-        sandbox = LocalEvalSandbox()
+        sandbox = EvalSandbox()
         executor = SandboxExecutor(sandbox)
         
         result = await executor.execute(
@@ -182,7 +182,7 @@ class SandboxExecutor:
         )
     """
     
-    sandbox: LocalEvalSandbox
+    sandbox: EvalSandbox
     default_timeout: int = 30
 
     def _get_effective_sandbox(self) -> Any:
@@ -1405,12 +1405,12 @@ if PYDANTIC_AI_AVAILABLE:
         when the toolset is first used::
 
             from agent_skills import AgentSkillsToolset, SandboxExecutor
-            from code_sandboxes.eval_sandbox import LocalEvalSandbox
+            from code_sandboxes.eval_sandbox import EvalSandbox
             from pydantic_ai import Agent
 
             toolset = AgentSkillsToolset(
                 directories=["./skills"],
-                executor=SandboxExecutor(LocalEvalSandbox()),
+                executor=SandboxExecutor(EvalSandbox()),
             )
             agent = Agent(model='openai:gpt-4o', toolsets=[toolset])
 
@@ -1419,7 +1419,7 @@ if PYDANTIC_AI_AVAILABLE:
         via ``skills=``::
 
             from agent_skills import AgentSkill, AgentSkillsToolset, SandboxExecutor
-            from code_sandboxes.eval_sandbox import LocalEvalSandbox
+            from code_sandboxes.eval_sandbox import EvalSandbox
             from pydantic_ai import Agent
 
             toolset = AgentSkillsToolset(
@@ -1427,7 +1427,7 @@ if PYDANTIC_AI_AVAILABLE:
                     AgentSkill.from_module("my_library.skills.parser"),
                     AgentSkill.from_module("my_library.skills.formatter"),
                 ],
-                executor=SandboxExecutor(LocalEvalSandbox()),
+                executor=SandboxExecutor(EvalSandbox()),
             )
             agent = Agent(model='openai:gpt-4o', toolsets=[toolset])
         """

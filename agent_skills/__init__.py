@@ -20,11 +20,11 @@ Use this when skills live in the same repository or are mounted at a known path:
 
     from pydantic_ai import Agent
     from agent_skills import AgentSkillsToolset, SandboxExecutor
-    from code_sandboxes.eval_sandbox import LocalEvalSandbox
+    from code_sandboxes.eval_sandbox import EvalSandbox
 
     toolset = AgentSkillsToolset(
         directories=["./skills"],       # scanned recursively for SKILL.md
-        executor=SandboxExecutor(LocalEvalSandbox()),
+        executor=SandboxExecutor(EvalSandbox()),
     )
 
     agent = Agent(model='openai:gpt-4o', toolsets=[toolset])
@@ -39,7 +39,7 @@ distributed as part of a pip-installable package:
 
     from pydantic_ai import Agent
     from agent_skills import AgentSkill, AgentSkillsToolset, SandboxExecutor
-    from code_sandboxes.eval_sandbox import LocalEvalSandbox
+    from code_sandboxes.eval_sandbox import EvalSandbox
 
     toolset = AgentSkillsToolset(
         skills=[
@@ -47,7 +47,7 @@ distributed as part of a pip-installable package:
             AgentSkill.from_module("agent_skills.skills.github"),
             AgentSkill.from_module("agent_skills.skills.pdf"),
         ],
-        executor=SandboxExecutor(LocalEvalSandbox()),
+        executor=SandboxExecutor(EvalSandbox()),
     )
 
     agent = Agent(model='openai:gpt-4o', toolsets=[toolset])
@@ -61,7 +61,7 @@ The two approaches stack freely:
         skills=[
             AgentSkill.from_module("agent_skills.skills.crawl"),
         ],
-        executor=SandboxExecutor(LocalEvalSandbox()),
+        executor=SandboxExecutor(EvalSandbox()),
     )
 
 ## 2. Skills as Code Files (Primary Pattern)

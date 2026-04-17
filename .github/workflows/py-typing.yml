@@ -13,6 +13,7 @@ on:
       - 'mypy.ini'
       - '.mypy.ini'
       - '.github/workflows/py-typing.yml'
+      - '.github/workflows/reusable-python.yml'
   pull_request:
     branches:
       - main
@@ -25,6 +26,7 @@ on:
       - 'mypy.ini'
       - '.mypy.ini'
       - '.github/workflows/py-typing.yml'
+      - '.github/workflows/reusable-python.yml'
   workflow_dispatch:
 
 concurrency:
@@ -33,26 +35,10 @@ concurrency:
 
 jobs:
   type-check:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - uses: astral-sh/setup-uv@v7
-        with:
-          version: "latest"
-          python-version: 3.12
-          activate-environment: true
-
-      - name: Install dependencies
-        run: |
-          uv pip install .
-          uv pip install .[typing]
-          uv pip install types-requests
-
-      - name: Run mypy
-        run: |
-          mypy agent_skills
+    uses: ./.github/workflows/reusable-python.yml
+    with:
+      python-version: '3.12'
+      install-extras: typing
+      extra-packages: types-requests
+      run-mypy: true
+      mypy-target: agent_skills

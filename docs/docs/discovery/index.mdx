@@ -21,11 +21,11 @@ well-known path at runtime (e.g. a Kubernetes shared volume).
 
 ```python
 from agent_skills import AgentSkillsToolset, SandboxExecutor
-from code_sandboxes.eval_sandbox import LocalEvalSandbox
+from code_sandboxes.eval_sandbox import EvalSandbox
 
 toolset = AgentSkillsToolset(
     directories=["./skills"],           # scanned recursively for SKILL.md
-    executor=SandboxExecutor(LocalEvalSandbox()),
+    executor=SandboxExecutor(EvalSandbox()),
 )
 ```
 
@@ -55,7 +55,7 @@ such as the built-in skills in `agent-skills` itself.
 
 ```python
 from agent_skills import AgentSkill, AgentSkillsToolset, SandboxExecutor
-from code_sandboxes.eval_sandbox import LocalEvalSandbox
+from code_sandboxes.eval_sandbox import EvalSandbox
 
 toolset = AgentSkillsToolset(
     skills=[
@@ -64,7 +64,7 @@ toolset = AgentSkillsToolset(
         AgentSkill.from_module("agent_skills.skills.pdf"),
         AgentSkill.from_module("agent_skills.skills.events"),
     ],
-    executor=SandboxExecutor(LocalEvalSandbox()),
+    executor=SandboxExecutor(EvalSandbox()),
 )
 ```
 
@@ -82,7 +82,7 @@ toolset = AgentSkillsToolset(
     skills=[
         AgentSkill.from_module("agent_skills.skills.crawl"),
     ],
-    executor=SandboxExecutor(LocalEvalSandbox()),
+    executor=SandboxExecutor(EvalSandbox()),
 )
 ```
 

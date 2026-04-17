@@ -68,11 +68,11 @@ well-known path at runtime:
 ```python
 from pydantic_ai import Agent
 from agent_skills import AgentSkillsToolset, SandboxExecutor
-from code_sandboxes.eval_sandbox import LocalEvalSandbox
+from code_sandboxes.eval_sandbox import EvalSandbox
 
 toolset = AgentSkillsToolset(
     directories=["./skills"],           # scanned recursively for SKILL.md
-    executor=SandboxExecutor(LocalEvalSandbox()),
+    executor=SandboxExecutor(EvalSandbox()),
 )
 
 agent = Agent(model='openai:gpt-4o', toolsets=[toolset])
@@ -91,7 +91,7 @@ Use this when skills are distributed as part of a pip-installable package
 ```python
 from pydantic_ai import Agent
 from agent_skills import AgentSkill, AgentSkillsToolset, SandboxExecutor
-from code_sandboxes.eval_sandbox import LocalEvalSandbox
+from code_sandboxes.eval_sandbox import EvalSandbox
 
 toolset = AgentSkillsToolset(
     skills=[
@@ -100,7 +100,7 @@ toolset = AgentSkillsToolset(
         AgentSkill.from_module("agent_skills.skills.pdf"),
         AgentSkill.from_module("agent_skills.skills.events"),
     ],
-    executor=SandboxExecutor(LocalEvalSandbox()),
+    executor=SandboxExecutor(EvalSandbox()),
 )
 
 agent = Agent(model='openai:gpt-4o', toolsets=[toolset])
@@ -118,7 +118,7 @@ toolset = AgentSkillsToolset(
         AgentSkill.from_module("agent_skills.skills.crawl"),
         AgentSkill.from_module("agent_skills.skills.github"),
     ],
-    executor=SandboxExecutor(LocalEvalSandbox()),
+    executor=SandboxExecutor(EvalSandbox()),
 )
 ```
 
@@ -487,6 +487,29 @@ data = await analyze_csv("/data/sales.csv")
 print(f"Analyzed {data['rows']} rows")
 ''')
 ```
+
+## CI Workflows
+
+This repository uses a reusable GitHub Actions workflow at `.github/workflows/reusable-python.yml`.
+
+The following workflows call it:
+
+- `.github/workflows/build.yml`
+- `.github/workflows/py-tests.yml`
+- `.github/workflows/py-code-style.yml`
+- `.github/workflows/py-typing.yml`
+
+Reusable workflow inputs:
+
+- `python-version`: Python version to run.
+- `install-system-deps`: Install Linux dependencies and unlock keyring.
+- `install-extras`: Extras from `pyproject.toml` (for example `test,typing`).
+- `extra-packages`: Additional packages installed with `uv pip install`.
+- `run-tests`: Enable test execution.
+- `test-command`: Command used for tests.
+- `run-mypy`: Enable mypy.
+- `mypy-target`: Package or module passed to mypy.
+- `run-pre-commit`: Enable pre-commit checks.
 
 ## License
 
