@@ -114,8 +114,24 @@ def format_repo_details(repo: dict) -> str:
     return "\n".join(lines)
 
 
+class _HelpOnErrorParser(argparse.ArgumentParser):
+    """ArgumentParser that prints full help on invalid arguments."""
+
+    def error(self, message: str) -> None:  # noqa: D401
+        params_help = (
+            "\nValid parameters for get_repo:\n"
+            "  repo (positional)  owner/repo  e.g. 'datalayer/jupyter-ui'\n"
+            "  --format           table | json  (default: table)\n"
+        )
+        self.print_usage(sys.stderr)
+        print(f"\nerror: {message}", file=sys.stderr)
+        print(params_help, file=sys.stderr)
+        print("Please retry with valid parameters.", file=sys.stderr)
+        sys.exit(2)
+
+
 def main():
-    parser = argparse.ArgumentParser(
+    parser = _HelpOnErrorParser(
         description="Get details for a specific GitHub repository."
     )
     parser.add_argument(

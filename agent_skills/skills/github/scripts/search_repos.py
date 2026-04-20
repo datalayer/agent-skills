@@ -127,8 +127,30 @@ def format_table(repos: list[dict], total: int) -> str:
     return "\n".join(lines)
 
 
+class _HelpOnErrorParser(argparse.ArgumentParser):
+    """ArgumentParser that prints full help on invalid arguments."""
+
+    def error(self, message: str) -> None:  # noqa: D401
+        params_help = (
+            "\nValid parameters for search_repos:\n"
+            "  query (positional)  search text  e.g. 'jupyter notebook'\n"
+            "  --language          string — filter by language\n"
+            "  --user              string — filter by user/owner\n"
+            "  --org               string — filter by organization\n"
+            "  --sort              stars | forks | updated | best-match  (default: best-match)\n"
+            "  --format            table | json  (default: table)\n"
+            "  --limit             integer — max results  (default: 20)\n"
+            "\nDo NOT pass 'per_page' — use 'limit' instead.\n"
+        )
+        self.print_usage(sys.stderr)
+        print(f"\nerror: {message}", file=sys.stderr)
+        print(params_help, file=sys.stderr)
+        print("Please retry with valid parameters.", file=sys.stderr)
+        sys.exit(2)
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Search GitHub repositories.")
+    parser = _HelpOnErrorParser(description="Search GitHub repositories.")
     parser.add_argument(
         "query",
         help="Search query",

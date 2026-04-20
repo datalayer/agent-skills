@@ -75,12 +75,15 @@ class TestAgentSkill:
         skill = AgentSkill(
             name="my-skill",
             description="Does something useful",
+            scripts=[AgentSkillScript(name="run")],
         )
         
         header = skill.get_skills_header()
         
         assert "my-skill" in header
         assert "Does something useful" in header
+        assert "summary=" in header
+        assert "scripts=run" in header
     
     def test_skill_get_full_content(self):
         """Test getting full skill content."""
@@ -330,6 +333,141 @@ Instructions for skill two.
         result = toolset._load_skill("nonexistent")
         
         assert "not found" in result.lower()
+
+    @pytest.mark.asyncio
+    async def test_load_skill_case_insensitive_name(self, skills_directory: Path):
+        """Skill lookup should tolerate case and separator differences."""
+        toolset = AgentSkillsToolset(
+            directories=[str(skills_directory)],
+        )
+
+        await toolset._ensure_initialized()
+        result = toolset._load_skill("Skill_One")
+
+        assert "Skill: skill-one" in result
+
+    @pytest.mark.asyncio
+    async def test_run_skill_script_case_insensitive_name(self, skills_directory: Path):
+        """Script lookup should tolerate case and separator differences."""
+        skill = AgentSkill(
+            name="script-skill",
+            description="Skill with callable script",
+            scripts=[],
+        )
+
+        @skill.script
+        async def list_repos() -> str:
+            return "ok"
+
+        toolset = AgentSkillsToolset(skills=[skill])
+        await toolset._ensure_initialized()
+
+        class MockCtx:
+            deps = None
+
+        result = await toolset._run_skill_script(
+            "SCRIPT_SKILL",
+            "List_Repos",
+            [],
+            {},
+            MockCtx(),
+        )
+
+        assert result["success"] is True
+        assert result["output"] == "ok"
+
+    @pytest.mark.asyncio
+    async def test_run_skill_script_exit_code_two_guidance(self, tmp_path: Path):
+        """Exit code 2 should include recovery guidance and root error code."""
+
+        class FakeExecutor:
+            async def execute(self, **kwargs):
+                return {
+                    "success": False,
+                    "output": "",
+                    "stdout": "",
+                    "stderr": "usage: ...",
+                    "execution_ok": True,
+                    "execution_error": "Script exited with code 2",
+                    "code_error": None,
+                    "exit_code": 2,
+                    "error": "Script exited with code 2",
+                }
+
+        script_path = tmp_path / "list_repos.py"
+        script_path.write_text("print('placeholder')")
+
+        skill = AgentSkill(
+            name="github",
+            description="GitHub skill",
+            scripts=[AgentSkillScript(name="list_repos", path=script_path)],
+        )
+
+        toolset = AgentSkillsToolset(skills=[skill], executor=FakeExecutor())
+        await toolset._ensure_initialized()
+
+        class MockCtx:
+            deps = None
+
+        result = await toolset._run_skill_script(
+            "github",
+            "list_repos",
+            [],
+            {"bad_key": "x"},
+            MockCtx(),
+        )
+
+        assert result["success"] is False
+        assert result["root_error_code"] == 2
+        assert "root error code 2" in (result.get("error") or "")
+        assert "load_skill(skill_name)" in (result.get("error") or "")
+
+    @pytest.mark.asyncio
+    async def test_run_skill_script_missing_github_token_reason(self, tmp_path: Path):
+        """Missing GITHUB_TOKEN should expose normalized failure_reason + hint."""
+
+        class FakeExecutor:
+            async def execute(self, **kwargs):
+                return {
+                    "success": False,
+                    "output": "",
+                    "stdout": "",
+                    "stderr": "Error: GITHUB_TOKEN environment variable is required",
+                    "execution_ok": True,
+                    "execution_error": "Script exited with code 1",
+                    "code_error": None,
+                    "exit_code": 1,
+                    "error": "Script exited with code 1",
+                }
+
+        script_path = tmp_path / "list_repos.py"
+        script_path.write_text("print('placeholder')")
+
+        skill = AgentSkill(
+            name="github",
+            description="GitHub skill",
+            scripts=[AgentSkillScript(name="list_repos", path=script_path)],
+        )
+
+        toolset = AgentSkillsToolset(skills=[skill], executor=FakeExecutor())
+        await toolset._ensure_initialized()
+
+        class MockCtx:
+            deps = None
+
+        result = await toolset._run_skill_script(
+            "github",
+            "list_repos",
+            [],
+            {},
+            MockCtx(),
+        )
+
+        assert result["success"] is False
+        assert result.get("failure_reason") == "Missing GitHub authentication token (GITHUB_TOKEN)."
+        assert "Connect/provide a GitHub token" in (result.get("recovery_hint") or "")
+        # Concrete stderr should replace generic "Script exited with code X".
+        assert "GITHUB_TOKEN environment variable is required" in (result.get("error") or "")
     
     @pytest.mark.asyncio
     async def test_toolset_with_programmatic_skills(self):
@@ -361,6 +499,7 @@ Instructions for skill two.
         skill = AgentSkill(
             name="test-skill",
             description="A test skill",
+            scripts=[AgentSkillScript(name="run")],
         )
         
         toolset = AgentSkillsToolset(skills=[skill])
@@ -373,6 +512,8 @@ Instructions for skill two.
         assert "test-skill" in instructions
         assert "location=\"programmatic\"" in instructions
         assert "load_skill" in instructions
+        assert "<skill_discovery_hints>" in instructions
+        assert "scripts=run" in instructions
 
 
 
@@ -390,7 +531,7 @@ Instructions for skill two.
                 self.result = result
                 self.last_code: str | None = None
                 self.last_envs: dict[str, str] | None = None
-                self._namespaces = {}  # Mark as local-eval-like
+                self._namespaces = {}  # Mark as eval-like
 
             def run_code(self, code: str, envs: dict[str, str] | None = None) -> ExecutionResult:
                 self.last_code = code
@@ -470,7 +611,7 @@ Instructions for skill two.
         """
 
         class DummyLocalSandbox:
-            """Simulates a local-eval sandbox (has ``_namespaces``)."""
+            """Simulates a eval sandbox (has ``_namespaces``)."""
             _namespaces: dict = {}
 
             def __init__(self, result: ExecutionResult):

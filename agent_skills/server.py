@@ -34,7 +34,7 @@ _manager: Optional[SkillsManager] = None
 
 def configure(
     skills_path: str = "./skills",
-    sandbox_variant: str = "local-eval",
+    sandbox_variant: str = "eval",
 ) -> SkillsManager:
     """Configure the Agent Skills MCP server.
     

@@ -122,8 +122,26 @@ def format_table(prs: list[dict]) -> str:
     return "\n".join(lines)
 
 
+class _HelpOnErrorParser(argparse.ArgumentParser):
+    """ArgumentParser that prints full help on invalid arguments."""
+
+    def error(self, message: str) -> None:  # noqa: D401
+        params_help = (
+            "\nValid parameters for list_prs:\n"
+            "  repo (positional)  owner/repo  e.g. 'datalayer/agent-runtimes'\n"
+            "  --state            open | closed | all  (default: open)\n"
+            "  --format           table | json  (default: table)\n"
+            "  --limit            integer — max PRs to return  (default: 50)\n"
+        )
+        self.print_usage(sys.stderr)
+        print(f"\nerror: {message}", file=sys.stderr)
+        print(params_help, file=sys.stderr)
+        print("Please retry with valid parameters.", file=sys.stderr)
+        sys.exit(2)
+
+
 def main():
-    parser = argparse.ArgumentParser(
+    parser = _HelpOnErrorParser(
         description="List pull requests for a GitHub repository."
     )
     parser.add_argument(

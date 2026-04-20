@@ -1,0 +1,44 @@
+name: Py Code Style
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'agent_skills/**/*.py'
+      - 'tests/**/*.py'
+      - 'pyproject.toml'
+      - 'setup.py'
+      - '.pre-commit-config.yaml'
+      - 'ruff.toml'
+      - '.ruff.toml'
+      - '.github/workflows/py-code-style.yml'
+      - '.github/workflows/reusable-python.yml'
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'agent_skills/**/*.py'
+      - 'tests/**/*.py'
+      - 'pyproject.toml'
+      - 'setup.py'
+      - '.pre-commit-config.yaml'
+      - 'ruff.toml'
+      - '.ruff.toml'
+      - '.github/workflows/py-code-style.yml'
+      - '.github/workflows/reusable-python.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-code-style:
+    uses: ./.github/workflows/reusable-python.yml
+    with:
+      python-version: '3.11'
+      extra-packages: pre-commit
+      run-pre-commit: true

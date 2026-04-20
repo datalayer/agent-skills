@@ -17,11 +17,11 @@ directories; every sub-directory containing a ``SKILL.md`` file is
 automatically discovered::
 
     from agent_skills import AgentSkillsToolset, SandboxExecutor
-    from code_sandboxes import LocalEvalSandbox
+    from code_sandboxes.eval_sandbox import EvalSandbox
 
     toolset = AgentSkillsToolset(
         directories=["./skills"],           # scanned recursively for SKILL.md
-        executor=SandboxExecutor(LocalEvalSandbox()),
+        executor=SandboxExecutor(EvalSandbox()),
     )
 
 This is the right pattern when skills are checked into the same repository
@@ -35,14 +35,14 @@ Skills live inside an installed Python package.  Use
 packages), then pass the results to the toolset via ``skills=``:
 
     from agent_skills import AgentSkill, AgentSkillsToolset, SandboxExecutor
-    from code_sandboxes import LocalEvalSandbox
+    from code_sandboxes.eval_sandbox import EvalSandbox
 
     toolset = AgentSkillsToolset(
         skills=[
             AgentSkill.from_module("agent_skills.skills.crawl"),
             AgentSkill.from_module("agent_skills.skills.github"),
         ],
-        executor=SandboxExecutor(LocalEvalSandbox()),
+        executor=SandboxExecutor(EvalSandbox()),
     )
 
 This is the right pattern when skills are distributed as part of an
@@ -58,7 +58,7 @@ The two approaches can be combined freely:
         skills=[
             AgentSkill.from_module("agent_skills.skills.crawl"),
         ],
-        executor=SandboxExecutor(LocalEvalSandbox()),
+        executor=SandboxExecutor(EvalSandbox()),
     )
 """
 
@@ -75,7 +75,7 @@ from code_sandboxes import ExecutionResult
 from typing import TypedDict
 
 if TYPE_CHECKING:
-    from code_sandboxes import LocalEvalSandbox
+    from code_sandboxes.eval_sandbox import EvalSandbox
     from pydantic_ai._run_context import RunContext
 
 logger = logging.getLogger(__name__)
@@ -104,6 +104,13 @@ class ScriptExecutionResult(TypedDict, total=False):
     
     # Exit code from sys.exit()
     exit_code: int | None
+
+    # Root failure code surfaced for downstream handling/UI.
+    root_error_code: int | None
+
+    # Optional normalized diagnostics for agent-friendly interpretation.
+    failure_reason: str | None
+    recovery_hint: str | None
     
     # Legacy error field for backwards compatibility
     error: str | None
@@ -157,14 +164,14 @@ class SkillScriptExecutorProtocol(Protocol):
 class SandboxExecutor:
     """Execute skill scripts in an isolated code sandbox.
     
-    Uses code-sandboxes (LocalEvalSandbox or remote) to execute
+    Uses code-sandboxes (EvalSandbox or remote) to execute
     skill scripts safely with proper isolation.
     
     Example:
-        from code_sandboxes import LocalEvalSandbox
+        from code_sandboxes.eval_sandbox import EvalSandbox
         from agent_skills import SandboxExecutor
         
-        sandbox = LocalEvalSandbox()
+        sandbox = EvalSandbox()
         executor = SandboxExecutor(sandbox)
         
         result = await executor.execute(
@@ -175,7 +182,7 @@ class SandboxExecutor:
         )
     """
     
-    sandbox: LocalEvalSandbox
+    sandbox: EvalSandbox
     default_timeout: int = 30
 
     def _get_effective_sandbox(self) -> Any:
@@ -417,10 +424,27 @@ try:
     
     # Return captured output
     output = _stdout.getvalue()
-    if not output:
-        output = _stderr.getvalue()
-    print(output)
+    if output:
+        print(output, end="")
+    err_output = _stderr.getvalue()
+    if err_output:
+        print(err_output, end="", file=sys.stderr)
+except SystemExit:
+    # Preserve argparse and explicit sys.exit diagnostics captured in stderr.
+    output = _stdout.getvalue()
+    if output:
+        print(output, end="")
+    err_output = _stderr.getvalue()
+    if err_output:
+        print(err_output, end="", file=sys.stderr)
+    raise
 except Exception as e:
+    output = _stdout.getvalue()
+    if output:
+        print(output, end="")
+    err_output = _stderr.getvalue()
+    if err_output:
+        print(err_output, end="", file=sys.stderr)
     print(f"Error: {{e}}", file=sys.stderr)
     raise
 '''
@@ -650,6 +674,80 @@ class AgentSkill:
     license: str | None = None
     compatibility: str | None = None
     metadata: dict[str, str] = field(default_factory=dict)
+
+    @staticmethod
+    def _normalize_key(value: str) -> str:
+        """Normalize a skill/script key for tolerant matching."""
+        return value.strip().lower().replace("_", "-")
+
+    def _extract_markdown_bullets(self, heading: str) -> list[str]:
+        """Extract bullet lines from a markdown heading section."""
+        import re
+
+        pattern = re.compile(
+            rf"^##\s+{re.escape(heading)}\s*$",
+            re.IGNORECASE | re.MULTILINE,
+        )
+        match = pattern.search(self.content)
+        if not match:
+            return []
+
+        tail = self.content[match.end():]
+        next_heading = re.search(r"^##\s+", tail, re.MULTILINE)
+        section = tail[: next_heading.start()] if next_heading else tail
+
+        bullets: list[str] = []
+        for line in section.splitlines():
+            stripped = line.strip()
+            if not stripped.startswith("- "):
+                continue
+            bullet = stripped[2:].strip()
+            if bullet:
+                bullets.append(bullet)
+        return bullets
+
+    def get_required_env_vars(self) -> list[str]:
+        """Return required environment variables discovered from SKILL.md."""
+        import re
+
+        env_vars: list[str] = []
+        for bullet in self._extract_markdown_bullets("Required Environment Variables"):
+            match = re.search(r"`([A-Z][A-Z0-9_]*)`", bullet)
+            if match:
+                env_vars.append(match.group(1))
+
+        if env_vars:
+            return sorted(set(env_vars))
+
+        # Fallback for older skills: parse env vars from script descriptions.
+        for script in self.scripts:
+            if not script.description:
+                continue
+            env_match = re.search(r"Env:\s*([^\.\n]+)", script.description)
+            if not env_match:
+                continue
+            for item in env_match.group(1).split(","):
+                token = item.strip()
+                if token and token.replace("_", "").isalnum() and token.upper() == token:
+                    env_vars.append(token)
+
+        return sorted(set(env_vars))
+
+    def get_discovery_summary(self) -> str:
+        """Return compact SKILL.md-derived usage hints for discovery context."""
+        scripts = ", ".join(script.name for script in self.scripts) or "none"
+        env_vars = self.get_required_env_vars()
+        env_text = ", ".join(env_vars) if env_vars else "none"
+
+        invocation_bullets = self._extract_markdown_bullets("Invocation Contract")
+        invocation_hint = ""
+        if invocation_bullets:
+            invocation_hint = " ".join(invocation_bullets[:2])
+
+        summary = [f"scripts={scripts}", f"required_env={env_text}"]
+        if invocation_hint:
+            summary.append(f"contract={invocation_hint}")
+        return " | ".join(summary)
     
     def resource(self, func: Callable) -> Callable:
         """Decorator to add a callable resource to the skill.
@@ -1184,10 +1282,12 @@ class AgentSkill:
         safe_name = self.name.replace('"', "'")
         safe_description = self.description.replace('"', "'")
         safe_location = location.replace('"', "'")
+        safe_summary = self.get_discovery_summary().replace('"', "'")
         return (
             f"<skill name=\"{safe_name}\" "
             f"description=\"{safe_description}\" "
-            f"location=\"{safe_location}\" />"
+            f"location=\"{safe_location}\" "
+            f"summary=\"{safe_summary}\" />"
         )
     
     def get_full_content(self) -> str:
@@ -1305,12 +1405,12 @@ if PYDANTIC_AI_AVAILABLE:
         when the toolset is first used::
 
             from agent_skills import AgentSkillsToolset, SandboxExecutor
-            from code_sandboxes import LocalEvalSandbox
+            from code_sandboxes.eval_sandbox import EvalSandbox
             from pydantic_ai import Agent
 
             toolset = AgentSkillsToolset(
                 directories=["./skills"],
-                executor=SandboxExecutor(LocalEvalSandbox()),
+                executor=SandboxExecutor(EvalSandbox()),
             )
             agent = Agent(model='openai:gpt-4o', toolsets=[toolset])
 
@@ -1319,7 +1419,7 @@ if PYDANTIC_AI_AVAILABLE:
         via ``skills=``::
 
             from agent_skills import AgentSkill, AgentSkillsToolset, SandboxExecutor
-            from code_sandboxes import LocalEvalSandbox
+            from code_sandboxes.eval_sandbox import EvalSandbox
             from pydantic_ai import Agent
 
             toolset = AgentSkillsToolset(
@@ -1327,7 +1427,7 @@ if PYDANTIC_AI_AVAILABLE:
                     AgentSkill.from_module("my_library.skills.parser"),
                     AgentSkill.from_module("my_library.skills.formatter"),
                 ],
-                executor=SandboxExecutor(LocalEvalSandbox()),
+                executor=SandboxExecutor(EvalSandbox()),
             )
             agent = Agent(model='openai:gpt-4o', toolsets=[toolset])
         """
@@ -1535,12 +1635,66 @@ if PYDANTIC_AI_AVAILABLE:
                 lines.append(skill.get_skills_header())
             
             return "\n".join(lines)
+
+        def _resolve_skill(self, skill_name: str) -> tuple[AgentSkill | None, str | None]:
+            """Resolve a skill name with tolerant matching and hints."""
+            if not skill_name:
+                return None, "Skill name is required"
+
+            # Exact match first.
+            skill = self._discovered_skills.get(skill_name)
+            if skill:
+                return skill, None
+
+            normalized_requested = AgentSkill._normalize_key(skill_name)
+            candidates = [
+                s
+                for s in self._discovered_skills.values()
+                if AgentSkill._normalize_key(s.name) == normalized_requested
+            ]
+            if len(candidates) == 1:
+                return candidates[0], None
+
+            available = ", ".join(sorted(self._discovered_skills.keys()))
+            return (
+                None,
+                f"Skill not found: {skill_name}. Available skills: {available}",
+            )
+
+        @staticmethod
+        def _resolve_script(
+            skill: AgentSkill,
+            script_name: str,
+        ) -> tuple[AgentSkillScript | None, str | None]:
+            """Resolve a script name with tolerant matching and hints."""
+            if not script_name:
+                return None, "Script name is required"
+
+            exact = next((s for s in skill.scripts if s.name == script_name), None)
+            if exact:
+                return exact, None
+
+            normalized_requested = AgentSkill._normalize_key(script_name)
+            matches = [
+                s
+                for s in skill.scripts
+                if AgentSkill._normalize_key(s.name) == normalized_requested
+            ]
+            if len(matches) == 1:
+                return matches[0], None
+
+            available = ", ".join(script.name for script in skill.scripts)
+            return (
+                None,
+                f"Script not found: {script_name}. Available scripts for "
+                f"{skill.name}: {available}",
+            )
         
         def _load_skill(self, skill_name: str) -> str:
             """Load full skill content."""
-            skill = self._discovered_skills.get(skill_name)
+            skill, error = self._resolve_skill(skill_name)
             if not skill:
-                return f"Skill not found: {skill_name}"
+                return error or f"Skill not found: {skill_name}"
             
             return skill.get_full_content()
         
@@ -1550,9 +1704,9 @@ if PYDANTIC_AI_AVAILABLE:
             resource_name: str,
         ) -> str:
             """Read a skill resource."""
-            skill = self._discovered_skills.get(skill_name)
+            skill, error = self._resolve_skill(skill_name)
             if not skill:
-                return f"Skill not found: {skill_name}"
+                return error or f"Skill not found: {skill_name}"
             
             for resource in skill.resources:
                 if resource.name == resource_name:
@@ -1573,7 +1727,7 @@ if PYDANTIC_AI_AVAILABLE:
             Returns:
                 ScriptExecutionResult with output, exit_code, and error details.
             """
-            skill = self._discovered_skills.get(skill_name)
+            skill, skill_error = self._resolve_skill(skill_name)
             if not skill:
                 return ScriptExecutionResult(
                     success=False,
@@ -1581,19 +1735,14 @@ if PYDANTIC_AI_AVAILABLE:
                     stdout="",
                     stderr="",
                     execution_ok=False,
-                    execution_error=f"Skill not found: {skill_name}",
+                    execution_error=skill_error or f"Skill not found: {skill_name}",
                     code_error=None,
                     exit_code=None,
-                    error=f"Skill not found: {skill_name}",
+                    error=skill_error or f"Skill not found: {skill_name}",
                 )
             
             # Find the script
-            script = None
-            for s in skill.scripts:
-                if s.name == script_name:
-                    script = s
-                    break
-            
+            script, script_error = self._resolve_script(skill, script_name)
             if not script:
                 return ScriptExecutionResult(
                     success=False,
@@ -1601,10 +1750,10 @@ if PYDANTIC_AI_AVAILABLE:
                     stdout="",
                     stderr="",
                     execution_ok=False,
-                    execution_error=f"Script not found: {script_name}",
+                    execution_error=script_error or f"Script not found: {script_name}",
                     code_error=None,
                     exit_code=None,
-                    error=f"Script not found: {script_name}",
+                    error=script_error or f"Script not found: {script_name}",
                 )
             
             # Execute
@@ -1640,13 +1789,70 @@ if PYDANTIC_AI_AVAILABLE:
                             flag = f"--{key.replace('_', '-')}"
                             effective_args.append(flag)
                             effective_args.append(str(value))
-                    return await self.executor.execute(
+                    result = await self.executor.execute(
                         skill_name=skill_name,
                         script_name=script_name,
                         script_path=script.path,
                         args=effective_args,
                         timeout=self.script_timeout,
                     )
+
+                    # Surface normalized root error code for clearer recovery logic.
+                    if result.get("exit_code") is not None:
+                        result["root_error_code"] = result["exit_code"]
+
+                    stderr_text = (result.get("stderr") or "").strip()
+                    error_text = (result.get("error") or "").strip()
+                    exec_error_text = (result.get("execution_error") or "").strip()
+
+                    # Prefer concrete stderr details over generic "Script exited with code X".
+                    if result.get("success") is False and stderr_text:
+                        if not exec_error_text or exec_error_text.startswith("Script exited with code"):
+                            result["execution_error"] = stderr_text
+                        if not error_text or error_text.startswith("Script exited with code"):
+                            result["error"] = stderr_text
+
+                    combined_text = " ".join(
+                        part
+                        for part in [
+                            stderr_text,
+                            str(result.get("execution_error") or "").strip(),
+                            str(result.get("error") or "").strip(),
+                        ]
+                        if part
+                    )
+
+                    if result.get("success") is False and "GITHUB_TOKEN environment variable is required" in combined_text:
+                        result["failure_reason"] = "Missing GitHub authentication token (GITHUB_TOKEN)."
+                        result["recovery_hint"] = (
+                            "Connect/provide a GitHub token in identity context and retry the same script call."
+                        )
+                    elif result.get("success") is False and "Invalid or expired GITHUB_TOKEN" in combined_text:
+                        result["failure_reason"] = "GitHub token is invalid or expired."
+                        result["recovery_hint"] = (
+                            "Refresh GitHub authentication token and retry the same script call."
+                        )
+
+                    # Exit code 2 is argparse usage/unknown flag error in skill scripts.
+                    if result.get("success") is False and result.get("exit_code") == 2:
+                        guidance = (
+                            "Script failed with root error code 2 (invalid CLI arguments). "
+                            "Call load_skill(skill_name) first and retry run_skill_script "
+                            "using only documented kwargs/args for the selected script."
+                        )
+                        existing_error = result.get("execution_error") or result.get("error")
+                        if existing_error:
+                            result["execution_error"] = f"{existing_error} {guidance}"
+                            result["error"] = f"{existing_error} {guidance}"
+                        else:
+                            result["execution_error"] = guidance
+                            result["error"] = guidance
+                        result["failure_reason"] = "Invalid CLI arguments for the selected skill script."
+                        result["recovery_hint"] = (
+                            "Call load_skill(skill_name), then retry run_skill_script with only documented args/kwargs."
+                        )
+
+                    return result
                 else:
                     return ScriptExecutionResult(
                         success=False,
@@ -1707,10 +1913,20 @@ if PYDANTIC_AI_AVAILABLE:
             lines.extend([
                 "</available_skills>",
                 "",
+                "<skill_discovery_hints>",
+            ])
+
+            for skill in self._discovered_skills.values():
+                lines.append(f"- {skill.name}: {skill.get_discovery_summary()}")
+
+            lines.extend([
+                "</skill_discovery_hints>",
+                "",
                 "<usage>",
-                "1. Use load_skill(skill_name) to read full instructions",
-                "2. Use read_skill_resource(skill_name, resource) for docs",
-                "3. Use run_skill_script(skill_name, script, args) to execute",
+                "1. Use list_skills to discover names and high-level contracts",
+                "2. Use load_skill(skill_name) before run_skill_script to load the exact API",
+                "3. Use read_skill_resource(skill_name, resource) for references",
+                "4. Use run_skill_script(skill_name, script_name, kwargs) to execute",
                 "</usage>",
                 "</skills>",
             ])

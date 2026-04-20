@@ -1,0 +1,44 @@
+name: Py Type Checking
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'agent_skills/**/*.py'
+      - 'tests/**/*.py'
+      - 'pyproject.toml'
+      - 'setup.py'
+      - 'mypy.ini'
+      - '.mypy.ini'
+      - '.github/workflows/py-typing.yml'
+      - '.github/workflows/reusable-python.yml'
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'agent_skills/**/*.py'
+      - 'tests/**/*.py'
+      - 'pyproject.toml'
+      - 'setup.py'
+      - 'mypy.ini'
+      - '.mypy.ini'
+      - '.github/workflows/py-typing.yml'
+      - '.github/workflows/reusable-python.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  type-check:
+    uses: ./.github/workflows/reusable-python.yml
+    with:
+      python-version: '3.12'
+      install-extras: typing
+      extra-packages: types-requests
+      run-mypy: true
+      mypy-target: agent_skills

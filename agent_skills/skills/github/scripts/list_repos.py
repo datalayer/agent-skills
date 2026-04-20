@@ -123,8 +123,26 @@ def format_table(repos: list[dict]) -> str:
     return "\n".join(lines)
 
 
+class _HelpOnErrorParser(argparse.ArgumentParser):
+    """ArgumentParser that prints full help on invalid arguments."""
+
+    def error(self, message: str) -> None:  # noqa: D401
+        params_help = (
+            "\nValid parameters for list_repos:\n"
+            "  --visibility  all | public | private  (default: all)\n"
+            "  --sort        updated | created | pushed | full_name  (default: updated)\n"
+            "  --format      table | json  (default: table)\n"
+            "  --limit       integer — max repos to return\n"
+        )
+        self.print_usage(sys.stderr)
+        print(f"\nerror: {message}", file=sys.stderr)
+        print(params_help, file=sys.stderr)
+        print("Please retry with valid parameters.", file=sys.stderr)
+        sys.exit(2)
+
+
 def main():
-    parser = argparse.ArgumentParser(
+    parser = _HelpOnErrorParser(
         description="List all repositories for the authenticated GitHub user."
     )
     parser.add_argument(
@@ -155,7 +173,11 @@ def main():
     args = parser.parse_args()
 
     try:
-        repos = list_repos(visibility=args.visibility, sort=args.sort)
+        repos = list_repos(
+            visibility=args.visibility,
+            sort=args.sort,
+            per_page=100,
+        )
 
         if args.limit:
             repos = repos[: args.limit]

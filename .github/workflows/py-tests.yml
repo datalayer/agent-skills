@@ -1,0 +1,43 @@
+name: Py Tests
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'agent_skills/**'
+      - 'tests/**'
+      - 'pyproject.toml'
+      - 'setup.py'
+      - 'requirements*.txt'
+      - '**/*.py'
+      - '.github/workflows/py-tests.yml'
+      - '.github/workflows/reusable-python.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'agent_skills/**'
+      - 'tests/**'
+      - 'pyproject.toml'
+      - 'setup.py'
+      - 'requirements*.txt'
+      - '**/*.py'
+      - '.github/workflows/py-tests.yml'
+      - '.github/workflows/reusable-python.yml'
+
+  workflow_dispatch:
+
+jobs:
+  tests:
+    strategy:
+      max-parallel: 1
+      matrix:
+        python-version: ['3.10', '3.11', '3.12', '3.13']
+    uses: ./.github/workflows/reusable-python.yml
+    with:
+      python-version: ${{ matrix.python-version }}
+      install-extras: test
+      extra-packages: dbus-python keyring secretstorage
+      run-tests: true
+      test-command: pytest tests/ --cov=agent_skills --cov-report term-missing

@@ -42,10 +42,10 @@ Skills are modular packages with instructions, resources, and scripts.
 ```python
 from pydantic_ai import Agent
 from agent_skills import AgentSkillsToolset, SandboxExecutor
-from code_sandboxes import LocalEvalSandbox
+from code_sandboxes.eval_sandbox import EvalSandbox
 
 # Create sandbox for execution
-sandbox = LocalEvalSandbox()
+sandbox = EvalSandbox()
 
 # Create toolset
 toolset = AgentSkillsToolset(
@@ -231,15 +231,15 @@ result = await agent.run("Analyze the sales data in /data/sales.csv")
 
 ## Execution Backends
 
-### LocalEvalSandbox
+### EvalSandbox
 
 Execute skills locally using Python eval:
 
 ```python
-from code_sandboxes import LocalEvalSandbox
+from code_sandboxes.eval_sandbox import EvalSandbox
 from agent_skills import SandboxExecutor
 
-sandbox = LocalEvalSandbox()
+sandbox = EvalSandbox()
 executor = SandboxExecutor(sandbox)
 ```
 

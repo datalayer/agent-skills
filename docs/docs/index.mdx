@@ -147,9 +147,9 @@ Use with Pydantic AI agents via `AgentSkillsToolset`:
 ```python
 from pydantic_ai import Agent
 from agent_skills import AgentSkillsToolset, SandboxExecutor
-from code_sandboxes import LocalEvalSandbox
+from code_sandboxes.eval_sandbox import EvalSandbox
 
-sandbox = LocalEvalSandbox()
+sandbox = EvalSandbox()
 toolset = AgentSkillsToolset(
     directories=["./skills"],
     executor=SandboxExecutor(sandbox),

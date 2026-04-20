@@ -35,7 +35,7 @@ from agent_skills import SkillsManager
 
 manager = SkillsManager(
     skills_path="./skills",       # Directory for skill storage
-    sandbox_variant="local-eval", # Sandbox type for execution
+    sandbox_variant="eval", # Sandbox type for execution
 )
 ```
 
@@ -44,7 +44,7 @@ manager = SkillsManager(
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `skills_path` | `str` | `"./skills"` | Directory for skill files |
-| `sandbox_variant` | `str` | `"local-eval"` | Sandbox for code execution |
+| `sandbox_variant` | `str` | `"eval"` | Sandbox for code execution |
 
 ## CRUD Operations
 

@@ -1,0 +1,24 @@
+name: Build
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  python-build:
+    name: Python Build & Test (${{ matrix.python-version }})
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12']
+    uses: ./.github/workflows/reusable-python.yml
+    with:
+      python-version: ${{ matrix.python-version }}
+      install-extras: test,typing
+      extra-packages: dbus-python keyring secretstorage
+      run-tests: true
+      test-command: pytest tests/ --cov=agent_skills --cov-report term-missing
+      run-mypy: true
+      mypy-target: agent_skills
