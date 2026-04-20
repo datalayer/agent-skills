@@ -1364,6 +1364,59 @@ class AgentSkill:
 
 
 # =============================================================================
+# Entrypoint-based Skill Discovery
+# =============================================================================
+
+#: Name of the entry-point group that third-party packages use to register
+#: skills.  A package adds one entry per skill in its ``pyproject.toml``::
+#:
+#:     [project.entry-points."agent_skills.skills"]
+#:     whoami = "my_package.skills.whoami"
+#:
+#: The value is a dotted module path that contains a ``SKILL.md`` file.
+SKILLS_ENTRYPOINT_GROUP = "agent_skills.skills"
+
+
+def discover_entrypoint_skills() -> list[AgentSkill]:
+    """Discover skills registered via Python package entrypoints.
+
+    Scans all installed packages for entrypoints in the
+    ``agent_skills.skills`` group.  Each entrypoint value is a dotted
+    Python module path that is expected to contain a ``SKILL.md`` file
+    (the same layout used by :meth:`AgentSkill.from_module`).
+
+    Returns:
+        List of :class:`AgentSkill` instances loaded from entrypoints.
+        Failed entrypoints are logged as warnings and skipped.
+
+    Example — listing entrypoint-discovered skills::
+
+        from agent_skills import discover_entrypoint_skills
+
+        for skill in discover_entrypoint_skills():
+            print(f"{skill.name}: {skill.description}")
+    """
+    import importlib.metadata
+
+    skills: list[AgentSkill] = []
+    eps = importlib.metadata.entry_points(group=SKILLS_ENTRYPOINT_GROUP)
+    for ep in eps:
+        try:
+            skill = AgentSkill.from_module(ep.value)
+            skills.append(skill)
+            logger.info(
+                f"Loaded entrypoint skill: {skill.name} "
+                f"(from {ep.dist.name if ep.dist else 'unknown'})"
+            )
+        except Exception as e:
+            logger.warning(
+                f"Failed to load entrypoint skill '{ep.name}' "
+                f"({ep.value}): {e}"
+            )
+    return skills
+
+
+# =============================================================================
 # Skills Toolset for Pydantic-AI
 # =============================================================================
 
@@ -1397,12 +1450,12 @@ if PYDANTIC_AI_AVAILABLE:
         - ``read_skill_resource(skill_name, resource_name)`` — read a resource
         - ``run_skill_script(skill_name, script_name, args)`` — execute a script
 
-        Skills can be supplied via **two complementary mechanisms** that can be
-        combined freely:
+        Skills can be supplied via **three complementary mechanisms** that can
+        be combined freely:
 
-        **Path-based** — point ``directories`` at one or more filesystem paths;
-        every sub-directory containing a ``SKILL.md`` file is auto-discovered
-        when the toolset is first used::
+        **1. Path-based** — point ``directories`` at one or more filesystem
+        paths; every sub-directory containing a ``SKILL.md`` file is
+        auto-discovered when the toolset is first used::
 
             from agent_skills import AgentSkillsToolset, SandboxExecutor
             from code_sandboxes.eval_sandbox import EvalSandbox
@@ -1414,7 +1467,7 @@ if PYDANTIC_AI_AVAILABLE:
             )
             agent = Agent(model='openai:gpt-4o', toolsets=[toolset])
 
-        **Module-based** — use ``AgentSkill.from_module()`` to load skills
+        **2. Module-based** — use ``AgentSkill.from_module()`` to load skills
         that are packaged inside an installed Python library, then pass them
         via ``skills=``::
 
@@ -1430,12 +1483,27 @@ if PYDANTIC_AI_AVAILABLE:
                 executor=SandboxExecutor(EvalSandbox()),
             )
             agent = Agent(model='openai:gpt-4o', toolsets=[toolset])
+
+        **3. Entrypoint-based** (automatic) — installed packages that declare
+        entrypoints in the ``agent_skills.skills`` group are discovered
+        automatically.  This is enabled by default (``discover_entrypoints=True``)
+        and requires no explicit configuration::
+
+            # In some-skill-package/pyproject.toml:
+            [project.entry-points."agent_skills.skills"]
+            my-skill = "some_skill_package.skills.my_skill"
+
+            # Then just create a toolset — entrypoint skills are found automatically:
+            toolset = AgentSkillsToolset(
+                executor=SandboxExecutor(EvalSandbox()),
+            )
         """
         
         directories: list[str | Path] = field(default_factory=list)
         skills: list[AgentSkill] = field(default_factory=list)
         executor: SandboxExecutor | None = None
         script_timeout: int = 30
+        discover_entrypoints: bool = True
         _id: str | None = None
         
         # Internal state
@@ -1459,10 +1527,11 @@ if PYDANTIC_AI_AVAILABLE:
             return "Agent Skills Toolset"
         
         async def _ensure_initialized(self) -> None:
-            """Discover skills from directories if not already done."""
+            """Discover skills from directories and entrypoints if not already done."""
             if self._initialized:
                 return
             
+            # 1. Path-based discovery: scan directories for SKILL.md files
             for directory in self.directories:
                 dir_path = Path(directory)
                 if not dir_path.exists():
@@ -1478,6 +1547,15 @@ if PYDANTIC_AI_AVAILABLE:
                             logger.debug(f"Discovered skill: {skill.name}")
                     except Exception as e:
                         logger.warning(f"Failed to load skill from {skill_md}: {e}")
+            
+            # 2. Entrypoint-based discovery: scan installed packages
+            if self.discover_entrypoints:
+                for ep_skill in discover_entrypoint_skills():
+                    if ep_skill.name not in self._discovered_skills:
+                        self._discovered_skills[ep_skill.name] = ep_skill
+                        logger.debug(
+                            f"Discovered entrypoint skill: {ep_skill.name}"
+                        )
             
             self._initialized = True
             logger.info(f"Discovered {len(self._discovered_skills)} skills")
