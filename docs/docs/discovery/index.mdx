@@ -1,16 +1,15 @@
 ---
 title: Skills Discovery
-sidebar_position: 1
 ---
 
 # Skills Discovery
 
-Agent Skills provides two ways to load skills into a toolset, plus a search
-API for runtime discovery.
+Agent Skills provides **three** ways to load skills into a toolset, plus a
+search API for runtime discovery.  The three mechanisms can be combined freely.
 
 ## Loading Skills into a Toolset
 
-### Path-based loading
+### 1. Path-based loading
 
 Point `AgentSkillsToolset` at one or more local directories.  Every
 sub-directory containing a `SKILL.md` file is discovered automatically when
@@ -43,7 +42,7 @@ skills/
         └── analyze.py
 ```
 
-### Module-based loading
+### 2. Module-based loading
 
 Use `AgentSkill.from_module()` to load skills that are packaged inside an
 installed Python library.  Works for both regular packages (with
@@ -71,10 +70,61 @@ toolset = AgentSkillsToolset(
 `from_module()` imports the module, resolves its directory, and delegates
 to `AgentSkill.from_skill_md()` — no extra configuration needed.
 
-### Combining both
+### 3. Entrypoint-based loading (automatic)
 
-The two approaches stack freely.  Skills loaded via `skills=` are merged
-with any skills discovered from `directories=`:
+Installed Python packages that declare entrypoints in the
+**`agent_skills.skills`** group are discovered **automatically** when the
+toolset initialises.  No explicit configuration is required — just install
+the package and the skills appear.
+
+**When to use:** distributing skills as standalone pip-installable packages
+that consumers can install independently.  This is the recommended approach
+for sharing skills across teams or publishing them on PyPI.
+
+```python
+from agent_skills import AgentSkillsToolset, SandboxExecutor
+from code_sandboxes.eval_sandbox import EvalSandbox
+
+# Entrypoint skills are found automatically — no skills= or directories= needed
+toolset = AgentSkillsToolset(
+    executor=SandboxExecutor(EvalSandbox()),
+)
+```
+
+The package registers its skills in `pyproject.toml`:
+
+```toml
+[project.entry-points."agent_skills.skills"]
+whoami = "datalayer_skills.skills.whoami"
+```
+
+Each key is a skill name and each value is a dotted Python module path
+that contains a `SKILL.md` file (the same layout used by
+`AgentSkill.from_module()`).
+
+To disable entrypoint scanning (e.g. for testing), set
+`discover_entrypoints=False`:
+
+```python
+toolset = AgentSkillsToolset(
+    discover_entrypoints=False,
+    executor=SandboxExecutor(EvalSandbox()),
+)
+```
+
+You can also call the discovery function directly:
+
+```python
+from agent_skills import discover_entrypoint_skills
+
+for skill in discover_entrypoint_skills():
+    print(f"{skill.name}: {skill.description}")
+```
+
+### Combining all three
+
+The three approaches stack freely.  Skills loaded via `skills=` are merged
+with any skills discovered from `directories=` and from entrypoints:
 
 ```python
 toolset = AgentSkillsToolset(
@@ -82,6 +132,7 @@ toolset = AgentSkillsToolset(
     skills=[
         AgentSkill.from_module("agent_skills.skills.crawl"),
     ],
+    # discover_entrypoints=True (default) — finds installed packages too
     executor=SandboxExecutor(EvalSandbox()),
 )
 ```
