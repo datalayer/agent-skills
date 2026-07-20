@@ -194,6 +194,49 @@ def process(data):
 
 
 # =============================================================================
+# Tests for Entrypoint Discovery
+# =============================================================================
+
+
+def test_discover_entrypoint_skills_loads_from_entrypoints(monkeypatch: pytest.MonkeyPatch):
+    """discover_entrypoint_skills should load skills from registered entrypoints."""
+    from types import SimpleNamespace
+    from agent_skills import toolset as toolset_module
+
+    loaded_modules: list[str] = []
+
+    def fake_entry_points(*, group: str):
+        assert group == toolset_module.SKILLS_ENTRYPOINT_GROUP
+        return [
+            SimpleNamespace(name="ep-skill", value="pkg.skills.ep", dist=None),
+        ]
+
+    def fake_from_module(module_name: str):
+        loaded_modules.append(module_name)
+        return AgentSkill(
+            name="ep-skill",
+            description="Entrypoint skill",
+            content="from entrypoint",
+        )
+
+    monkeypatch.setattr(
+        "importlib.metadata.entry_points",
+        fake_entry_points,
+    )
+    monkeypatch.setattr(
+        toolset_module.AgentSkill,
+        "from_module",
+        staticmethod(fake_from_module),
+    )
+
+    skills = toolset_module.discover_entrypoint_skills()
+
+    assert len(skills) == 1
+    assert skills[0].name == "ep-skill"
+    assert loaded_modules == ["pkg.skills.ep"]
+
+
+# =============================================================================
 # Tests for Executors
 # =============================================================================
 
@@ -292,6 +335,43 @@ Instructions for skill two.
         assert len(toolset._discovered_skills) == 2
         assert "skill-one" in toolset._discovered_skills
         assert "skill-two" in toolset._discovered_skills
+
+    @pytest.mark.asyncio
+    async def test_toolset_discover_entrypoints_false_skips_scanning(
+        self,
+        skills_directory: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        """discover_entrypoints=False should skip entrypoint scanning."""
+        from agent_skills import toolset as toolset_module
+
+        calls = {"count": 0}
+
+        def fake_discover_entrypoint_skills() -> list[AgentSkill]:
+            calls["count"] += 1
+            return [
+                AgentSkill(
+                    name="ep-skill",
+                    description="Entrypoint skill",
+                    content="entrypoint content",
+                )
+            ]
+
+        monkeypatch.setattr(
+            toolset_module,
+            "discover_entrypoint_skills",
+            fake_discover_entrypoint_skills,
+        )
+
+        toolset = AgentSkillsToolset(
+            directories=[str(skills_directory)],
+            discover_entrypoints=False,
+        )
+
+        await toolset._ensure_initialized()
+
+        assert calls["count"] == 0
+        assert "ep-skill" not in toolset._discovered_skills
     
     @pytest.mark.asyncio
     async def test_list_skills(self, skills_directory: Path):

@@ -1502,9 +1502,11 @@ def discover_entrypoint_skills() -> list[AgentSkill]:
         try:
             skill = AgentSkill.from_module(ep.value)
             skills.append(skill)
+            dist = getattr(ep, "dist", None)
+            dist_name = getattr(dist, "name", "unknown")
             logger.info(
                 f"Loaded entrypoint skill: {skill.name} "
-                f"(from {ep.dist.name if ep.dist else 'unknown'})"
+                f"(from {dist_name})"
             )
         except Exception as e:
             logger.warning(
@@ -1584,8 +1586,8 @@ if PYDANTIC_AI_AVAILABLE:
 
         **3. Entrypoint-based** (automatic) — installed packages that declare
         entrypoints in the ``agent_skills.skills`` group are discovered
-        automatically.  This is enabled by default (``discover_entrypoints=True``)
-        and requires no explicit configuration::
+        automatically when explicitly enabled with
+        ``discover_entrypoints=True``::
 
             # In some-skill-package/pyproject.toml:
             [project.entry-points."agent_skills.skills"]
@@ -1593,6 +1595,7 @@ if PYDANTIC_AI_AVAILABLE:
 
             # Then just create a toolset — entrypoint skills are found automatically:
             toolset = AgentSkillsToolset(
+                discover_entrypoints=True,
                 executor=SandboxExecutor(EvalSandbox()),
             )
         """
@@ -1601,7 +1604,7 @@ if PYDANTIC_AI_AVAILABLE:
         skills: list[AgentSkill] = field(default_factory=list)
         executor: SandboxExecutor | None = None
         script_timeout: int = 30
-        discover_entrypoints: bool = True
+        discover_entrypoints: bool = False
         _id: str | None = None
         
         # Internal state

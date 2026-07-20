@@ -55,7 +55,7 @@ distributed as part of a pip-installable package:
 ### Entrypoint-based loading
 
 Installed packages that register entrypoints in the ``agent_skills.skills``
-group are discovered automatically — no configuration needed.  Use this when
+group are discovered when explicitly enabled. Use this when
 skills are distributed as standalone pip-installable packages:
 
     # In some-skill-package/pyproject.toml:
@@ -64,10 +64,11 @@ skills are distributed as standalone pip-installable packages:
 
     # Skills are found automatically:
     toolset = AgentSkillsToolset(
+        discover_entrypoints=True,
         executor=SandboxExecutor(EvalSandbox()),
     )
 
-Disable with ``discover_entrypoints=False`` if needed.
+By default, ``discover_entrypoints=False`` for deterministic startup.
 
 ### Combining all three
 
@@ -78,7 +79,8 @@ The three approaches stack freely:
         skills=[
             AgentSkill.from_module("agent_skills.skills.crawl"),
         ],
-        # discover_entrypoints=True (default) finds installed packages
+        # discover_entrypoints=True enables installed package discovery
+        discover_entrypoints=True,
         executor=SandboxExecutor(EvalSandbox()),
     )
 
