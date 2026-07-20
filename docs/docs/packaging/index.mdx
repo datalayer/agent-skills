@@ -1,0 +1,341 @@
+---
+title: Packaging
+---
+
+# Packaging
+
+## Distributing Skills as Python Packages
+
+Skills can be distributed as standalone pip-installable Python packages that
+are **discovered automatically** by `agent-skills` via Python entrypoints.
+This is the recommended approach for sharing skills across teams or publishing
+them on PyPI.
+
+### How It Works
+
+1. You create a Python package containing one or more skill directories
+   (each with a `SKILL.md` and optional `scripts/`).
+2. The package declares entrypoints under the `agent_skills.skills` group
+   in its `pyproject.toml`.
+3. When a consumer installs the package and creates an `AgentSkillsToolset`,
+   the skills are found automatically — no configuration needed.
+
+### Package Structure
+
+```
+my-skills-package/
+├── pyproject.toml
+├── LICENSE
+├── README.md
+└── my_skills/
+    ├── __init__.py
+    ├── __version__.py
+    └── skills/
+        ├── __init__.py
+        └── my_skill/
+            ├── __init__.py
+            ├── SKILL.md
+            └── scripts/
+                └── run.py
+```
+
+### Step-by-Step Guide
+
+#### 1. Create the skill directory
+
+Each skill lives in its own directory with a `SKILL.md` file (YAML
+frontmatter + Markdown body) and an optional `scripts/` sub-directory:
+
+```
+my_skills/skills/my_skill/
+├── __init__.py        # Can be empty, makes it importable
+├── SKILL.md           # Skill metadata and instructions
+└── scripts/
+    └── run.py         # Executable script(s)
+```
+
+The `SKILL.md` frontmatter must include at least `name` and `description`:
+
+```markdown
+---
+name: my-skill
+description: Does something useful.
+version: 1.0.0
+tags:
+  - example
+author: Your Name
+---
+
+# My Skill
+
+Instructions for the agent on how to use this skill.
+
+## Required Environment Variables
+
+- `MY_API_KEY` — API key for the service.
+
+## Scripts API
+
+### `script_name: run`
+
+- `args`: `["<input>"]`
+- optional `kwargs`: `format`, `timeout`
+```
+
+#### 2. Configure `pyproject.toml`
+
+The key section is `[project.entry-points."agent_skills.skills"]`. Each
+entry maps a skill name to the dotted Python module path containing the
+`SKILL.md` file:
+
+```toml
+[build-system]
+requires = ["hatchling~=1.21"]
+build-backend = "hatchling.build"
+
+[project]
+name = "my-skills-package"
+version = "0.1.0"
+dependencies = [
+    "agent_skills",
+    # Add runtime dependencies for your scripts here
+]
+
+# ---- Entrypoint Registration ----
+[project.entry-points."agent_skills.skills"]
+my-skill = "my_skills.skills.my_skill"
+
+[tool.hatch.build.targets.wheel]
+packages = ["my_skills"]
+# Include non-Python data files
+artifacts = [
+  "my_skills/skills/**/*.md",
+  "my_skills/skills/**/scripts/*.py",
+]
+```
+
+:::tip
+The entrypoint key (left side) is the skill name for discovery logging.
+The value (right side) must be a valid Python module path that contains a
+`SKILL.md` file in the same directory.
+:::
+
+#### 3. Include data files in the wheel
+
+Since `SKILL.md` and script files are not `.py` files, you must tell your
+build backend to include them. With hatchling, use the `artifacts` list
+under `[tool.hatch.build.targets.wheel]` as shown above.
+
+#### 4. Install and verify
+
+```bash
+# Install in development mode
+pip install -e .
+
+# Verify the entrypoint is registered
+python -c "
+from agent_skills import discover_entrypoint_skills
+for skill in discover_entrypoint_skills():
+    print(f'{skill.name}: {skill.description}')
+"
+```
+
+#### 5. Consumer usage
+
+Once installed, the skills are available automatically:
+
+```python
+from agent_skills import AgentSkillsToolset, SandboxExecutor
+from code_sandboxes.eval_sandbox import EvalSandbox
+from pydantic_ai import Agent
+
+# No need to reference my-skills-package anywhere — entrypoints do the work
+toolset = AgentSkillsToolset(
+    executor=SandboxExecutor(EvalSandbox()),
+)
+agent = Agent(model='openai:gpt-4o', toolsets=[toolset])
+```
+
+### Registering Multiple Skills
+
+A single package can register multiple skills:
+
+```toml
+[project.entry-points."agent_skills.skills"]
+skill-a = "my_skills.skills.skill_a"
+skill-b = "my_skills.skills.skill_b"
+skill-c = "my_skills.skills.skill_c"
+```
+
+Each value must point to a module directory containing a `SKILL.md`.
+
+---
+
+## Reference Implementation: `datalayer-skills`
+
+The [`datalayer-skills`](https://github.com/datalayer/skills) package is a
+complete reference implementation. It provides skills for the Datalayer
+platform (IAM, runtimes, etc.) and demonstrates all the patterns described
+above.
+
+### Package layout
+
+```
+datalayer-skills/
+├── pyproject.toml
+├── LICENSE
+├── README.md
+└── datalayer_skills/
+    ├── __init__.py
+    ├── __version__.py
+    └── skills/
+        ├── __init__.py
+        └── whoami/
+            ├── __init__.py
+            ├── SKILL.md
+            └── scripts/
+                └── whoami.py
+```
+
+### Entrypoint registration
+
+In `pyproject.toml`:
+
+```toml
+[project.entry-points."agent_skills.skills"]
+whoami = "datalayer_skills.skills.whoami"
+```
+
+### The `whoami` skill
+
+The `whoami` skill calls the Datalayer IAM `GET /api/iam/v1/whoami` endpoint
+and returns the authenticated user's profile. Its `SKILL.md` declares the
+required environment variables (`DATALAYER_TOKEN`, `DATALAYER_RUN_URL`) and
+the script API.
+
+The script at `datalayer_skills/skills/whoami/scripts/whoami.py`:
+
+- Uses `httpx` to call the IAM API
+- Accepts `--run-url` and `--token` CLI arguments (with env-var fallbacks)
+- Normalises the Solr-style field names to human-friendly keys
+- Prints the result as JSON
+
+### Using it
+
+```bash
+pip install datalayer_skills
+```
+
+```python
+from agent_skills import AgentSkillsToolset, SandboxExecutor
+from code_sandboxes.eval_sandbox import EvalSandbox
+
+# The "whoami" skill is now available automatically
+toolset = AgentSkillsToolset(
+    executor=SandboxExecutor(EvalSandbox()),
+)
+```
+
+### Building your own
+
+Use `datalayer-skills` as a template:
+
+1. Copy the directory structure
+2. Replace the `whoami/` skill directory with your own skill(s)
+3. Update the entrypoints in `pyproject.toml`
+4. Install and verify with `discover_entrypoint_skills()`
+
+---
+
+## Built-in Examples
+
+Agent Skills also includes runnable examples demonstrating all framework features.
+
+### Simple Examples
+
+The `examples/simple/` directory contains a comprehensive example covering:
+
+| Feature | Description |
+|---------|-------------|
+| **Skill Creation** | Create skills programmatically via SkillsManager API |
+| **SKILL.md Format** | Parse and generate Claude Code compatible SKILL.md files |
+| **Skill Discovery** | Discover and search skills from directories |
+| **Skill Execution** | Execute skills in sandboxes with arguments |
+| **Skill Versioning** | Version management for skills |
+| **Skills as Code** | Code file-based skills managed with SkillsManager |
+| **MCP Server** | Expose skills via MCP protocol |
+
+### Running the Example
+
+```bash
+cd examples/simple
+python skills_example.py
+```
+
+**Source:** [examples/simple/skills_example.py](https://github.com/datalayer/agent-skills/blob/main/examples/simple/skills_example.py)
+
+## Code Snippets
+
+### Skill Creation
+
+```python
+from agent_skills import SkillsManager, SkillContext
+
+manager = SkillsManager("./skills")
+skill = manager.create(
+    name="data_analyzer",
+    description="Analyze data from a file",
+    content="# Data Analyzer\n...",
+    python_code='print("Analyzing...")',
+    allowed_tools=["filesystem__read_file"],
+    tags=["data", "analysis"],
+    context=SkillContext.FORK,
+)
+```
+
+### SKILL.md Parsing
+
+```python
+from agent_skills import Skill
+
+skill = Skill.from_skill_md("""---
+name: web_scraper
+description: Scrape and extract data
+version: 1.0.0
+allowed-tools:
+  - http__fetch
+---
+
+# Web Scraper Skill
+...
+""")
+```
+
+### Skill Discovery & Search
+
+```python
+# Discover from directory
+discovered = manager.discover()
+
+# Search for skills
+result = manager.search("data processing", limit=5)
+
+# Filter by tags
+data_skills = manager.list(tags=["data"])
+```
+
+### Skill Execution
+
+```python
+skill = manager.get("data_analyzer")
+execution = await manager.execute(
+    skill,
+    arguments={"file_path": "/tmp/data.txt"},
+    timeout=10.0,
+)
+```
+
+## Further Reading
+
+- [examples/README.md](https://github.com/datalayer/agent-skills/blob/main/examples/README.md)
+- [examples/simple/README.md](https://github.com/datalayer/agent-skills/blob/main/examples/simple/README.md)

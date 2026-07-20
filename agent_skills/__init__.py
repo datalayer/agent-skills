@@ -10,7 +10,7 @@ This package provides two complementary approaches for managing agent skills:
 
 Build on pydantic-ai's SkillsToolset pattern for progressive disclosure of skills.
 
-Skills can be loaded in **two ways** that can be combined:
+Skills can be loaded in **three ways** that can be combined:
 
 ### Path-based loading
 
@@ -52,15 +52,35 @@ distributed as part of a pip-installable package:
 
     agent = Agent(model='openai:gpt-4o', toolsets=[toolset])
 
-### Combining both
+### Entrypoint-based loading
 
-The two approaches stack freely:
+Installed packages that register entrypoints in the ``agent_skills.skills``
+group are discovered when explicitly enabled. Use this when
+skills are distributed as standalone pip-installable packages:
+
+    # In some-skill-package/pyproject.toml:
+    [project.entry-points."agent_skills.skills"]
+    my-skill = "some_skill_package.skills.my_skill"
+
+    # Skills are found automatically:
+    toolset = AgentSkillsToolset(
+        discover_entrypoints=True,
+        executor=SandboxExecutor(EvalSandbox()),
+    )
+
+By default, ``discover_entrypoints=False`` for deterministic startup.
+
+### Combining all three
+
+The three approaches stack freely:
 
     toolset = AgentSkillsToolset(
         directories=["./skills"],           # local / custom skills
         skills=[
             AgentSkill.from_module("agent_skills.skills.crawl"),
         ],
+        # discover_entrypoints=True enables installed package discovery
+        discover_entrypoints=True,
         executor=SandboxExecutor(EvalSandbox()),
     )
 
@@ -156,6 +176,8 @@ from .toolset import (
     SkillScriptExecutorProtocol,
     ScriptExecutionResult,
     PYDANTIC_AI_AVAILABLE,
+    discover_entrypoint_skills,
+    SKILLS_ENTRYPOINT_GROUP,
 )
 
 __all__ = [
@@ -196,4 +218,7 @@ __all__ = [
     "SkillScriptExecutorProtocol",
     "ScriptExecutionResult",
     "PYDANTIC_AI_AVAILABLE",
+    # Entrypoint Discovery
+    "discover_entrypoint_skills",
+    "SKILLS_ENTRYPOINT_GROUP",
 ]

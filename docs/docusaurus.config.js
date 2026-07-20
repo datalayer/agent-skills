@@ -10,12 +10,14 @@ module.exports = {
   url: 'https://agent-skills.datalayer.tech',
   baseUrl: '/',
   onBrokenLinks: 'throw',
-  onBrokenMarkdownLinks: 'warn',
   favicon: 'img/favicon.ico',
   organizationName: 'datalayer',
   projectName: 'datalayer',
   markdown: {
     mermaid: true,
+    hooks: {
+      onBrokenMarkdownLinks: 'warn',
+    },
   },
   plugins: [
     '@docusaurus/theme-live-codeblock',
@@ -62,9 +64,15 @@ module.exports = {
         },
         {
           type: 'doc',
-          docId: 'integration/index',
+          docId: 'integrations/index',
           position: 'left',
-          label: 'Integration',
+          label: 'Integrations',
+        },
+        {
+          type: 'doc',
+          docId: 'packaging/index',
+          position: 'left',
+          label: 'Packaging',
         },
         {
           type: 'doc',

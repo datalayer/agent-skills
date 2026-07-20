@@ -74,6 +74,11 @@ from typing import TYPE_CHECKING, Any, Callable, Protocol, runtime_checkable
 from code_sandboxes import ExecutionResult
 from typing import TypedDict
 
+try:  # Generic client — available in newer code_sandboxes releases.
+    from code_sandboxes import CodeSandboxClient
+except ImportError:  # pragma: no cover - version skew with older code_sandboxes
+    CodeSandboxClient = None  # type: ignore[assignment,misc]
+
 if TYPE_CHECKING:
     from code_sandboxes.eval_sandbox import EvalSandbox
     from pydantic_ai._run_context import RunContext
@@ -158,6 +163,82 @@ class SkillScriptExecutorProtocol(Protocol):
 # =============================================================================
 # Sandbox Executor
 # =============================================================================
+
+
+def _outcome_to_script_result(outcome: Any) -> ScriptExecutionResult:
+    """Map a ``code_sandboxes.CodeExecutionOutcome`` to a ScriptExecutionResult.
+
+    Reproduces the exact failure branching the executor has always used —
+    infrastructure failure → user-code exception → non-zero ``sys.exit()`` →
+    success — so switching to the generic client changes no observable
+    behaviour for callers or the UI.
+    """
+    stdout = outcome.stdout or ""
+    stderr = outcome.stderr or ""
+
+    # Infrastructure failure (execution_ok=False).
+    if not outcome.execution_ok:
+        message = outcome.execution_error or "Sandbox execution failed"
+        return ScriptExecutionResult(
+            success=False,
+            output=stderr or stdout,
+            stdout=stdout,
+            stderr=stderr,
+            execution_ok=False,
+            execution_error=message,
+            code_error=None,
+            exit_code=None,
+            error=message,
+        )
+
+    # User-code exception.
+    if outcome.code_error:
+        code_error = {
+            "name": outcome.code_error.get("name", "Error"),
+            "value": outcome.code_error.get("value", ""),
+            "traceback": outcome.code_error.get("traceback", "") or "",
+        }
+        return ScriptExecutionResult(
+            success=False,
+            output=stderr or stdout,
+            stdout=stdout,
+            stderr=stderr,
+            execution_ok=True,
+            execution_error=None,
+            code_error=code_error,
+            exit_code=None,
+            error=f"{code_error['name']}: {code_error['value']}",
+        )
+
+    # Intentional non-zero exit.
+    if outcome.exit_code is not None and outcome.exit_code != 0:
+        return ScriptExecutionResult(
+            success=False,
+            output=stderr or stdout,
+            stdout=stdout,
+            stderr=stderr,
+            execution_ok=True,
+            execution_error=None,
+            code_error=None,
+            exit_code=outcome.exit_code,
+            error=f"Script exited with code {outcome.exit_code}",
+        )
+
+    # Success.
+    output = stdout
+    if not output and outcome.results:
+        output = "\n".join(outcome.results)
+    return ScriptExecutionResult(
+        success=True,
+        output=output,
+        stdout=stdout,
+        stderr=stderr,
+        execution_ok=True,
+        execution_error=None,
+        code_error=None,
+        exit_code=outcome.exit_code,
+        error=None,
+    )
 
 
 @dataclass
@@ -247,6 +328,23 @@ class SandboxExecutor:
             # Select the effective sandbox (local fallback for Jupyter)
             effective_sandbox = self._get_effective_sandbox()
 
+            # Preferred path: delegate execution + result normalization to the
+            # variant-agnostic code_sandboxes client. This reuses the SAME
+            # sandbox (the colocated Jupyter kernel in the K8s pod), so state
+            # persists and env vars injected into that kernel remain visible.
+            # Run via asyncio.to_thread to keep the sync run_code call off the
+            # event loop — identical threading to the legacy path below, which
+            # is what avoids a kernel deadlock when a skill is invoked through
+            # the MCP proxy (the HTTP request already runs on a worker thread).
+            if CodeSandboxClient is not None and hasattr(effective_sandbox, "run_code"):
+                client = CodeSandboxClient(effective_sandbox)
+                outcome = await asyncio.to_thread(
+                    client.execute_code, execution_code, envs=identity_env
+                )
+                return _outcome_to_script_result(outcome)
+
+            # Legacy path: interpret the raw ExecutionResult directly. Kept for
+            # older code_sandboxes installs without CodeSandboxClient.
             # Execute in sandbox - prefer run_code if available (supports envs)
             if hasattr(effective_sandbox, 'run_code'):
                 # Use run_code which supports envs parameter.
@@ -1364,6 +1462,61 @@ class AgentSkill:
 
 
 # =============================================================================
+# Entrypoint-based Skill Discovery
+# =============================================================================
+
+#: Name of the entry-point group that third-party packages use to register
+#: skills.  A package adds one entry per skill in its ``pyproject.toml``::
+#:
+#:     [project.entry-points."agent_skills.skills"]
+#:     whoami = "my_package.skills.whoami"
+#:
+#: The value is a dotted module path that contains a ``SKILL.md`` file.
+SKILLS_ENTRYPOINT_GROUP = "agent_skills.skills"
+
+
+def discover_entrypoint_skills() -> list[AgentSkill]:
+    """Discover skills registered via Python package entrypoints.
+
+    Scans all installed packages for entrypoints in the
+    ``agent_skills.skills`` group.  Each entrypoint value is a dotted
+    Python module path that is expected to contain a ``SKILL.md`` file
+    (the same layout used by :meth:`AgentSkill.from_module`).
+
+    Returns:
+        List of :class:`AgentSkill` instances loaded from entrypoints.
+        Failed entrypoints are logged as warnings and skipped.
+
+    Example — listing entrypoint-discovered skills::
+
+        from agent_skills import discover_entrypoint_skills
+
+        for skill in discover_entrypoint_skills():
+            print(f"{skill.name}: {skill.description}")
+    """
+    import importlib.metadata
+
+    skills: list[AgentSkill] = []
+    eps = importlib.metadata.entry_points(group=SKILLS_ENTRYPOINT_GROUP)
+    for ep in eps:
+        try:
+            skill = AgentSkill.from_module(ep.value)
+            skills.append(skill)
+            dist = getattr(ep, "dist", None)
+            dist_name = getattr(dist, "name", "unknown")
+            logger.info(
+                f"Loaded entrypoint skill: {skill.name} "
+                f"(from {dist_name})"
+            )
+        except Exception as e:
+            logger.warning(
+                f"Failed to load entrypoint skill '{ep.name}' "
+                f"({ep.value}): {e}"
+            )
+    return skills
+
+
+# =============================================================================
 # Skills Toolset for Pydantic-AI
 # =============================================================================
 
@@ -1397,12 +1550,12 @@ if PYDANTIC_AI_AVAILABLE:
         - ``read_skill_resource(skill_name, resource_name)`` — read a resource
         - ``run_skill_script(skill_name, script_name, args)`` — execute a script
 
-        Skills can be supplied via **two complementary mechanisms** that can be
-        combined freely:
+        Skills can be supplied via **three complementary mechanisms** that can
+        be combined freely:
 
-        **Path-based** — point ``directories`` at one or more filesystem paths;
-        every sub-directory containing a ``SKILL.md`` file is auto-discovered
-        when the toolset is first used::
+        **1. Path-based** — point ``directories`` at one or more filesystem
+        paths; every sub-directory containing a ``SKILL.md`` file is
+        auto-discovered when the toolset is first used::
 
             from agent_skills import AgentSkillsToolset, SandboxExecutor
             from code_sandboxes.eval_sandbox import EvalSandbox
@@ -1414,7 +1567,7 @@ if PYDANTIC_AI_AVAILABLE:
             )
             agent = Agent(model='openai:gpt-4o', toolsets=[toolset])
 
-        **Module-based** — use ``AgentSkill.from_module()`` to load skills
+        **2. Module-based** — use ``AgentSkill.from_module()`` to load skills
         that are packaged inside an installed Python library, then pass them
         via ``skills=``::
 
@@ -1430,12 +1583,28 @@ if PYDANTIC_AI_AVAILABLE:
                 executor=SandboxExecutor(EvalSandbox()),
             )
             agent = Agent(model='openai:gpt-4o', toolsets=[toolset])
+
+        **3. Entrypoint-based** (automatic) — installed packages that declare
+        entrypoints in the ``agent_skills.skills`` group are discovered
+        automatically when explicitly enabled with
+        ``discover_entrypoints=True``::
+
+            # In some-skill-package/pyproject.toml:
+            [project.entry-points."agent_skills.skills"]
+            my-skill = "some_skill_package.skills.my_skill"
+
+            # Then just create a toolset — entrypoint skills are found automatically:
+            toolset = AgentSkillsToolset(
+                discover_entrypoints=True,
+                executor=SandboxExecutor(EvalSandbox()),
+            )
         """
         
         directories: list[str | Path] = field(default_factory=list)
         skills: list[AgentSkill] = field(default_factory=list)
         executor: SandboxExecutor | None = None
         script_timeout: int = 30
+        discover_entrypoints: bool = False
         _id: str | None = None
         
         # Internal state
@@ -1459,10 +1628,11 @@ if PYDANTIC_AI_AVAILABLE:
             return "Agent Skills Toolset"
         
         async def _ensure_initialized(self) -> None:
-            """Discover skills from directories if not already done."""
+            """Discover skills from directories and entrypoints if not already done."""
             if self._initialized:
                 return
             
+            # 1. Path-based discovery: scan directories for SKILL.md files
             for directory in self.directories:
                 dir_path = Path(directory)
                 if not dir_path.exists():
@@ -1478,6 +1648,15 @@ if PYDANTIC_AI_AVAILABLE:
                             logger.debug(f"Discovered skill: {skill.name}")
                     except Exception as e:
                         logger.warning(f"Failed to load skill from {skill_md}: {e}")
+            
+            # 2. Entrypoint-based discovery: scan installed packages
+            if self.discover_entrypoints:
+                for ep_skill in discover_entrypoint_skills():
+                    if ep_skill.name not in self._discovered_skills:
+                        self._discovered_skills[ep_skill.name] = ep_skill
+                        logger.debug(
+                            f"Discovered entrypoint skill: {ep_skill.name}"
+                        )
             
             self._initialized = True
             logger.info(f"Discovered {len(self._discovered_skills)} skills")

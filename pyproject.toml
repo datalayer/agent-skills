@@ -24,8 +24,8 @@ dependencies = [
     "code_sandboxes",
     "mcp[cli]>=1.0",
     "pydantic>=2.0",
-    "pydantic-graph",
-    "pydantic-ai-slim",
+    "pydantic-graph>=1.94.0",
+    "pydantic-ai-slim>=1.94.0",
     "pyyaml>=6.0",
 ]
 
