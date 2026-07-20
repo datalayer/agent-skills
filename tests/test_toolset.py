@@ -533,7 +533,12 @@ Instructions for skill two.
                 self.last_envs: dict[str, str] | None = None
                 self._namespaces = {}  # Mark as eval-like
 
-            def run_code(self, code: str, envs: dict[str, str] | None = None) -> ExecutionResult:
+            def run_code(
+                self,
+                code: str,
+                envs: dict[str, str] | None = None,
+                **kwargs,
+            ) -> ExecutionResult:
                 self.last_code = code
                 self.last_envs = envs
                 return self.result

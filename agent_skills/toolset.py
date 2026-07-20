@@ -74,6 +74,11 @@ from typing import TYPE_CHECKING, Any, Callable, Protocol, runtime_checkable
 from code_sandboxes import ExecutionResult
 from typing import TypedDict
 
+try:  # Generic client — available in newer code_sandboxes releases.
+    from code_sandboxes import CodeSandboxClient
+except ImportError:  # pragma: no cover - version skew with older code_sandboxes
+    CodeSandboxClient = None  # type: ignore[assignment,misc]
+
 if TYPE_CHECKING:
     from code_sandboxes.eval_sandbox import EvalSandbox
     from pydantic_ai._run_context import RunContext
@@ -158,6 +163,82 @@ class SkillScriptExecutorProtocol(Protocol):
 # =============================================================================
 # Sandbox Executor
 # =============================================================================
+
+
+def _outcome_to_script_result(outcome: Any) -> ScriptExecutionResult:
+    """Map a ``code_sandboxes.CodeExecutionOutcome`` to a ScriptExecutionResult.
+
+    Reproduces the exact failure branching the executor has always used —
+    infrastructure failure → user-code exception → non-zero ``sys.exit()`` →
+    success — so switching to the generic client changes no observable
+    behaviour for callers or the UI.
+    """
+    stdout = outcome.stdout or ""
+    stderr = outcome.stderr or ""
+
+    # Infrastructure failure (execution_ok=False).
+    if not outcome.execution_ok:
+        message = outcome.execution_error or "Sandbox execution failed"
+        return ScriptExecutionResult(
+            success=False,
+            output=stderr or stdout,
+            stdout=stdout,
+            stderr=stderr,
+            execution_ok=False,
+            execution_error=message,
+            code_error=None,
+            exit_code=None,
+            error=message,
+        )
+
+    # User-code exception.
+    if outcome.code_error:
+        code_error = {
+            "name": outcome.code_error.get("name", "Error"),
+            "value": outcome.code_error.get("value", ""),
+            "traceback": outcome.code_error.get("traceback", "") or "",
+        }
+        return ScriptExecutionResult(
+            success=False,
+            output=stderr or stdout,
+            stdout=stdout,
+            stderr=stderr,
+            execution_ok=True,
+            execution_error=None,
+            code_error=code_error,
+            exit_code=None,
+            error=f"{code_error['name']}: {code_error['value']}",
+        )
+
+    # Intentional non-zero exit.
+    if outcome.exit_code is not None and outcome.exit_code != 0:
+        return ScriptExecutionResult(
+            success=False,
+            output=stderr or stdout,
+            stdout=stdout,
+            stderr=stderr,
+            execution_ok=True,
+            execution_error=None,
+            code_error=None,
+            exit_code=outcome.exit_code,
+            error=f"Script exited with code {outcome.exit_code}",
+        )
+
+    # Success.
+    output = stdout
+    if not output and outcome.results:
+        output = "\n".join(outcome.results)
+    return ScriptExecutionResult(
+        success=True,
+        output=output,
+        stdout=stdout,
+        stderr=stderr,
+        execution_ok=True,
+        execution_error=None,
+        code_error=None,
+        exit_code=outcome.exit_code,
+        error=None,
+    )
 
 
 @dataclass
@@ -247,6 +328,23 @@ class SandboxExecutor:
             # Select the effective sandbox (local fallback for Jupyter)
             effective_sandbox = self._get_effective_sandbox()
 
+            # Preferred path: delegate execution + result normalization to the
+            # variant-agnostic code_sandboxes client. This reuses the SAME
+            # sandbox (the colocated Jupyter kernel in the K8s pod), so state
+            # persists and env vars injected into that kernel remain visible.
+            # Run via asyncio.to_thread to keep the sync run_code call off the
+            # event loop — identical threading to the legacy path below, which
+            # is what avoids a kernel deadlock when a skill is invoked through
+            # the MCP proxy (the HTTP request already runs on a worker thread).
+            if CodeSandboxClient is not None and hasattr(effective_sandbox, "run_code"):
+                client = CodeSandboxClient(effective_sandbox)
+                outcome = await asyncio.to_thread(
+                    client.execute_code, execution_code, envs=identity_env
+                )
+                return _outcome_to_script_result(outcome)
+
+            # Legacy path: interpret the raw ExecutionResult directly. Kept for
+            # older code_sandboxes installs without CodeSandboxClient.
             # Execute in sandbox - prefer run_code if available (supports envs)
             if hasattr(effective_sandbox, 'run_code'):
                 # Use run_code which supports envs parameter.
