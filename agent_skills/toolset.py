@@ -80,7 +80,7 @@ except ImportError:  # pragma: no cover - version skew with older code_sandboxes
     CodeSandboxClient = None  # type: ignore[assignment,misc]
 
 if TYPE_CHECKING:
-    from code_sandboxes.eval_sandbox import EvalSandbox
+    from code_sandboxes import Sandbox
     from pydantic_ai._run_context import RunContext
 
 logger = logging.getLogger(__name__)
@@ -245,14 +245,15 @@ def _outcome_to_script_result(outcome: Any) -> ScriptExecutionResult:
 class SandboxExecutor:
     """Execute skill scripts in an isolated code sandbox.
     
-    Uses code-sandboxes (EvalSandbox or remote) to execute
-    skill scripts safely with proper isolation.
+    Uses code-sandboxes to execute skill scripts safely with proper
+    isolation. Any variant is supported (eval, monty, docker, jupyter,
+    colab, modal, datalayer) as long as it exposes ``run_code``.
     
     Example:
-        from code_sandboxes.eval_sandbox import EvalSandbox
+        from code_sandboxes import Sandbox
         from agent_skills import SandboxExecutor
         
-        sandbox = EvalSandbox()
+        sandbox = Sandbox.create(variant="eval")
         executor = SandboxExecutor(sandbox)
         
         result = await executor.execute(
@@ -263,7 +264,7 @@ class SandboxExecutor:
         )
     """
     
-    sandbox: EvalSandbox
+    sandbox: Sandbox
     default_timeout: int = 30
 
     def _get_effective_sandbox(self) -> Any:

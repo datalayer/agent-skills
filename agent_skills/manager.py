@@ -63,7 +63,10 @@ class SkillsManager:
         
         Args:
             skills_path: Directory for skill storage.
-            sandbox_variant: Sandbox type for execution.
+            sandbox_variant: Sandbox type for execution. One of the
+                code-sandboxes variants: ``eval`` (default), ``monty``,
+                ``docker``, ``jupyter``, ``colab``, ``modal``, or
+                ``datalayer``.
         """
         self.skills_path = Path(skills_path)
         self.sandbox_variant = sandbox_variant
@@ -446,7 +449,7 @@ class SkillsManager:
             # Create sandbox based on context
             sandbox_variant = self.sandbox_variant
             if skill.metadata.context == SkillContext.SANDBOX:
-                sandbox_variant = "datalayer-runtime"
+                sandbox_variant = "datalayer"
             
             with Sandbox.create(variant=sandbox_variant) as sandbox:
                 # Inject arguments

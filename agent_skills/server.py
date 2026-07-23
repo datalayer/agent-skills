@@ -40,7 +40,9 @@ def configure(
     
     Args:
         skills_path: Directory for skill storage.
-        sandbox_variant: Sandbox type for execution.
+        sandbox_variant: Sandbox type for execution. One of the
+            code-sandboxes variants: ``eval`` (default), ``monty``,
+            ``docker``, ``jupyter``, ``colab``, ``modal``, or ``datalayer``.
         
     Returns:
         Configured SkillsManager.
