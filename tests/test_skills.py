@@ -5,27 +5,24 @@
 """Unit tests for agent-skills package."""
 
 import asyncio
-import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from agent_skills.files import SkillFile, SkillDirectory, setup_skills_directory
 from agent_skills.codegen import generate_skill_file, generate_skill_from_template
+from agent_skills.files import SkillDirectory, SkillFile, setup_skills_directory
 from agent_skills.types import (
     Skill,
     SkillContext,
     SkillHooks,
     SkillMetadata,
-    SkillSearchResult,
     SkillStatus,
 )
-
 
 # =============================================================================
 # SkillFile Tests
 # =============================================================================
+
 
 class TestSkillFile:
     """Tests for SkillFile class."""
@@ -76,10 +73,10 @@ async def _private():
 
     def test_from_file_no_docstring(self, tmp_path: Path):
         """Test file without docstring."""
-        skill_code = '''
+        skill_code = """
 async def no_doc():
     pass
-'''
+"""
         skill_file = tmp_path / "no_doc.py"
         skill_file.write_text(skill_code)
 
@@ -105,7 +102,7 @@ async def no_doc():
         subdir = tmp_path / "subpackage"
         subdir.mkdir()
         skill_file = subdir / "nested_skill.py"
-        skill_file.write_text('async def nested(): pass')
+        skill_file.write_text("async def nested(): pass")
 
         skill = SkillFile.from_file(skill_file, tmp_path)
 
@@ -114,12 +111,12 @@ async def no_doc():
 
     def test_load_module(self, tmp_path: Path):
         """Test loading skill as a module."""
-        skill_code = '''
+        skill_code = """
 TEST_VALUE = 42
 
 async def get_value():
     return TEST_VALUE
-'''
+"""
         skill_file = tmp_path / "loadable.py"
         skill_file.write_text(skill_code)
 
@@ -132,13 +129,13 @@ async def get_value():
 
     def test_get_function_by_name(self, tmp_path: Path):
         """Test getting a specific function by name."""
-        skill_code = '''
+        skill_code = """
 async def func_a():
     return "a"
 
 async def func_b():
     return "b"
-'''
+"""
         skill_file = tmp_path / "multi_func.py"
         skill_file.write_text(skill_code)
 
@@ -150,10 +147,10 @@ async def func_b():
 
     def test_get_function_default(self, tmp_path: Path):
         """Test getting default function (matching skill name)."""
-        skill_code = '''
+        skill_code = """
 async def my_skill():
     return "default"
-'''
+"""
         skill_file = tmp_path / "my_skill.py"
         skill_file.write_text(skill_code)
 
@@ -166,6 +163,7 @@ async def my_skill():
 # =============================================================================
 # SkillDirectory Tests
 # =============================================================================
+
 
 class TestSkillDirectory:
     """Tests for SkillDirectory class."""
@@ -192,8 +190,8 @@ class TestSkillDirectory:
         skills = SkillDirectory(str(tmp_path))
 
         # Create some skill files
-        (tmp_path / "skill_a.py").write_text('async def skill_a(): pass')
-        (tmp_path / "skill_b.py").write_text('async def skill_b(): pass')
+        (tmp_path / "skill_a.py").write_text("async def skill_a(): pass")
+        (tmp_path / "skill_b.py").write_text("async def skill_b(): pass")
 
         result = skills.list()
 
@@ -206,8 +204,8 @@ class TestSkillDirectory:
         """Test that private files are ignored."""
         skills = SkillDirectory(str(tmp_path))
 
-        (tmp_path / "public_skill.py").write_text('async def public(): pass')
-        (tmp_path / "_private.py").write_text('async def private(): pass')
+        (tmp_path / "public_skill.py").write_text("async def public(): pass")
+        (tmp_path / "_private.py").write_text("async def private(): pass")
 
         result = skills.list()
 
@@ -234,7 +232,9 @@ class TestSkillDirectory:
         """Test searching for skills."""
         skills = SkillDirectory(str(tmp_path))
 
-        (tmp_path / "csv_analyzer.py").write_text('"""Analyze CSV files"""\nasync def analyze(): pass')
+        (tmp_path / "csv_analyzer.py").write_text(
+            '"""Analyze CSV files"""\nasync def analyze(): pass'
+        )
         (tmp_path / "json_parser.py").write_text('"""Parse JSON"""\nasync def parse(): pass')
         (tmp_path / "data_processor.py").write_text('"""Process data"""\nasync def process(): pass')
 
@@ -249,7 +249,7 @@ class TestSkillDirectory:
 
         skill = skills.create(
             name="new_skill",
-            code='async def new_skill(x: str) -> str:\n    return x.upper()',
+            code="async def new_skill(x: str) -> str:\n    return x.upper()",
             description="Convert text to uppercase",
         )
 
@@ -265,7 +265,7 @@ class TestSkillDirectory:
     def test_delete_skill(self, tmp_path: Path):
         """Test deleting a skill."""
         skills = SkillDirectory(str(tmp_path))
-        (tmp_path / "to_delete.py").write_text('async def to_delete(): pass')
+        (tmp_path / "to_delete.py").write_text("async def to_delete(): pass")
 
         assert (tmp_path / "to_delete.py").exists()
         result = skills.delete("to_delete")
@@ -282,8 +282,9 @@ class TestSkillDirectory:
     def test_add_to_sys_path(self, tmp_path: Path):
         """Test adding skills to sys.path."""
         import sys
+
         skills = SkillDirectory(str(tmp_path / "test_skills"))
-        
+
         original_path = sys.path.copy()
         skills.add_to_sys_path()
 
@@ -297,12 +298,14 @@ class TestSkillDirectory:
 # setup_skills_directory Tests
 # =============================================================================
 
+
 class TestSetupSkillsDirectory:
     """Tests for setup_skills_directory function."""
 
     def test_setup_creates_directory(self, tmp_path: Path):
         """Test that setup creates and configures the directory."""
         import sys
+
         original_path = sys.path.copy()
 
         try:
@@ -317,6 +320,7 @@ class TestSetupSkillsDirectory:
 # =============================================================================
 # Code Generation Tests
 # =============================================================================
+
 
 class TestCodeGeneration:
     """Tests for skill code generation."""
@@ -343,8 +347,19 @@ class TestCodeGeneration:
             description="Skill with parameters",
             code="return input_path",
             parameters=[
-                {"name": "input_path", "type": "str", "description": "Input path", "required": True},
-                {"name": "limit", "type": "int", "description": "Limit", "required": False, "default": 10},
+                {
+                    "name": "input_path",
+                    "type": "str",
+                    "description": "Input path",
+                    "required": True,
+                },
+                {
+                    "name": "limit",
+                    "type": "int",
+                    "description": "Limit",
+                    "required": False,
+                    "default": 10,
+                },
             ],
             output_dir=tmp_path,
         )
@@ -369,6 +384,7 @@ class TestCodeGeneration:
 # =============================================================================
 # Models Tests
 # =============================================================================
+
 
 class TestModels:
     """Tests for data models."""
@@ -428,6 +444,7 @@ class TestModels:
 # Integration Tests
 # =============================================================================
 
+
 class TestIntegration:
     """Integration tests for agent-skills."""
 
@@ -439,10 +456,10 @@ class TestIntegration:
         # Create a simple skill
         skill = skills.create(
             name="double_value",
-            code='''
+            code="""
 async def double_value(x: int) -> int:
     return x * 2
-''',
+""",
             description="Double a value",
         )
 
@@ -458,7 +475,6 @@ async def double_value(x: int) -> int:
     @pytest.mark.asyncio
     async def test_skill_composition(self, tmp_path: Path):
         """Test that skills can import other skills."""
-        import sys
         skills_path = tmp_path / "compose_skills"
         skills = SkillDirectory(str(skills_path))
         skills.add_to_sys_path()
@@ -466,16 +482,16 @@ async def double_value(x: int) -> int:
         # Create first skill
         skills.create(
             name="add_one",
-            code='''
+            code="""
 async def add_one(x: int) -> int:
     return x + 1
-''',
+""",
         )
 
         # Create second skill that imports the first
         skills.create(
             name="add_two",
-            code=f'''
+            code=f"""
 import sys
 sys.path.insert(0, "{skills_path.parent}")
 
@@ -484,7 +500,7 @@ async def add_two(x: int) -> int:
     result = await add_one(x)
     result = await add_one(result)
     return result
-''',
+""",
         )
 
         # Test composition

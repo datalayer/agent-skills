@@ -39,6 +39,7 @@ Use this skill to call the GitHub scripts through `run_skill_script`.
 ### Recovery from exit code 2
 
 When a script exits with code `2`, the error output includes a **"Valid parameters"** block listing every accepted flag with types and defaults. Use that list to build a corrected `kwargs`/`args` and retry. Common mistakes:
+
 - Using `per_page` instead of `limit`.
 - Passing `org` or `user` to `list_repos` (those belong to `search_repos`).
 - Omitting the required positional `query` arg for `search_repos` (use `args: ["<query>"]`).

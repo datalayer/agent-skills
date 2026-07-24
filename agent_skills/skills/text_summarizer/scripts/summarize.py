@@ -13,7 +13,6 @@ Environment:
 """
 
 import argparse
-import sys
 
 
 def summarize(

@@ -56,39 +56,117 @@ def summarize_text(
 
 def _split_sentences(text: str) -> list[str]:
     """Split text into sentences."""
-    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+    sentences = re.split(r"(?<=[.!?])\s+", text.strip())
     return [s for s in sentences if s.strip()]
 
 
-def _score_sentences(
-    sentences: list[str], full_text: str
-) -> list[tuple[str, float, int]]:
+def _score_sentences(sentences: list[str], full_text: str) -> list[tuple[str, float, int]]:
     """Score sentences by word frequency relevance.
 
     Returns list of (sentence, score, original_index).
     """
-    words = re.findall(r'\b\w+\b', full_text.lower())
+    words = re.findall(r"\b\w+\b", full_text.lower())
     # Filter out very common English stop words
     stop_words = {
-        'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been',
-        'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will',
-        'would', 'could', 'should', 'may', 'might', 'can', 'shall',
-        'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from',
-        'as', 'into', 'through', 'during', 'before', 'after', 'and',
-        'but', 'or', 'nor', 'not', 'so', 'yet', 'both', 'either',
-        'neither', 'each', 'every', 'all', 'any', 'few', 'more',
-        'most', 'other', 'some', 'such', 'no', 'only', 'own', 'same',
-        'than', 'too', 'very', 'just', 'because', 'if', 'when', 'while',
-        'this', 'that', 'these', 'those', 'it', 'its', 'he', 'she',
-        'they', 'them', 'their', 'we', 'you', 'i', 'me', 'my', 'your',
-        'his', 'her', 'our', 'us',
+        "the",
+        "a",
+        "an",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "being",
+        "have",
+        "has",
+        "had",
+        "do",
+        "does",
+        "did",
+        "will",
+        "would",
+        "could",
+        "should",
+        "may",
+        "might",
+        "can",
+        "shall",
+        "to",
+        "of",
+        "in",
+        "for",
+        "on",
+        "with",
+        "at",
+        "by",
+        "from",
+        "as",
+        "into",
+        "through",
+        "during",
+        "before",
+        "after",
+        "and",
+        "but",
+        "or",
+        "nor",
+        "not",
+        "so",
+        "yet",
+        "both",
+        "either",
+        "neither",
+        "each",
+        "every",
+        "all",
+        "any",
+        "few",
+        "more",
+        "most",
+        "other",
+        "some",
+        "such",
+        "no",
+        "only",
+        "own",
+        "same",
+        "than",
+        "too",
+        "very",
+        "just",
+        "because",
+        "if",
+        "when",
+        "while",
+        "this",
+        "that",
+        "these",
+        "those",
+        "it",
+        "its",
+        "he",
+        "she",
+        "they",
+        "them",
+        "their",
+        "we",
+        "you",
+        "i",
+        "me",
+        "my",
+        "your",
+        "his",
+        "her",
+        "our",
+        "us",
     }
     filtered = [w for w in words if w not in stop_words and len(w) > 1]
     freq = Counter(filtered)
 
     scored = []
     for idx, sentence in enumerate(sentences):
-        s_words = re.findall(r'\b\w+\b', sentence.lower())
+        s_words = re.findall(r"\b\w+\b", sentence.lower())
         score = sum(freq.get(w, 0) for w in s_words if w not in stop_words)
         # Normalize by sentence length to avoid bias toward long sentences
         if s_words:

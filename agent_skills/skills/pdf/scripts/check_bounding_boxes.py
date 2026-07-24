@@ -50,9 +50,7 @@ def get_bounding_box_messages(fields_json_stream) -> list[str]:
                         f"FAILURE: intersection between {ri.rect_type} bounding box for `{ri.field['description']}` ({ri.rect}) and {rj.rect_type} bounding box for `{rj.field['description']}` ({rj.rect})"
                     )
                 if len(messages) >= 20:
-                    messages.append(
-                        "Aborting further checks; fix bounding boxes and try again"
-                    )
+                    messages.append("Aborting further checks; fix bounding boxes and try again")
                     return messages
         if ri.rect_type == "entry":
             if "entry_text" in ri.field:
@@ -64,9 +62,7 @@ def get_bounding_box_messages(fields_json_stream) -> list[str]:
                         f"FAILURE: entry bounding box height ({entry_height}) for `{ri.field['description']}` is too short for the text content (font size: {font_size}). Increase the box height or decrease the font size."
                     )
                     if len(messages) >= 20:
-                        messages.append(
-                            "Aborting further checks; fix bounding boxes and try again"
-                        )
+                        messages.append("Aborting further checks; fix bounding boxes and try again")
                         return messages
 
     if not has_error:

@@ -4,9 +4,9 @@
 
 """Pytest configuration and fixtures for agent-skills tests."""
 
-import pytest
-import tempfile
 from pathlib import Path
+
+import pytest
 
 
 @pytest.fixture
@@ -25,10 +25,10 @@ def sample_skill_file(skills_dir: Path) -> Path:
 
 async def sample_skill(input_value: str) -> dict:
     """Process input value.
-    
+
     Args:
         input_value: The value to process.
-    
+
     Returns:
         Processed result.
     """

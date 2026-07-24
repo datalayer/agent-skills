@@ -124,4 +124,10 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 # S101 Use of `assert` detected
-"agent_skills/tests/*" = ["S101"]
+"tests/*" = ["S101"]
+# Test modules commonly use long literals, fixture-only bindings, and mutable
+# fake class attributes for behavioral checks.
+"tests/**/*.py" = ["S101", "E501", "F841", "RUF012"]
+# Example scripts intentionally use print statements and temporary file paths for
+# interactive/demo output.
+"examples/**/*.py" = ["T201", "S108"]

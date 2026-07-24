@@ -72,9 +72,7 @@ def fetch_page(url: str, timeout: float = 30.0) -> dict:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Fetch a webpage and extract its text content."
-    )
+    parser = argparse.ArgumentParser(description="Fetch a webpage and extract its text content.")
     parser.add_argument("url", help="The URL of the webpage to fetch")
     parser.add_argument(
         "--output", "-o", help="Output file path (prints to stdout if not specified)"

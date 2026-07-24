@@ -38,10 +38,10 @@ async def process_csv(
     transform: str = "uppercase",
 ) -> dict:
     """Process a CSV file and save the result.
-    
+
     Reads a CSV file, applies a transformation to all text fields,
     and writes the result to a new file.
-    
+
     Args:
         input_path: Path to the input CSV file.
         output_path: Path where the processed CSV will be saved.
@@ -49,16 +49,16 @@ async def process_csv(
             - "uppercase": Convert to uppercase
             - "lowercase": Convert to lowercase
             - "title": Convert to title case
-    
+
     Returns:
         Dictionary with:
         - rows_processed: Number of rows processed
         - output_path: Path to the output file
-    
+
     Raises:
         FileNotFoundError: If input file doesn't exist.
         ValueError: If transform is not recognized.
-    
+
     Example:
         result = await process_csv(
             "/data/input.csv",
@@ -84,7 +84,7 @@ async def search_files(
     max_results: Optional[int] = None,
 ) -> list[dict[str, str]]:
     """Search for files matching a pattern.
-    
+
     Returns:
         List of dicts with 'path' and 'name' keys.
     """
@@ -103,7 +103,7 @@ Chain skills for multi-step workflows:
 
 async def run_pipeline(input_dir: str, output_dir: str) -> dict:
     """Run the complete data pipeline.
-    
+
     Steps:
     1. Validate input files
     2. Transform data
@@ -112,18 +112,18 @@ async def run_pipeline(input_dir: str, output_dir: str) -> dict:
     from skills.validation import validate_files
     from skills.transform import transform_data
     from skills.reporting import generate_report
-    
+
     # Step 1: Validate
     validation = await validate_files(input_dir)
     if not validation["valid"]:
         return {"success": False, "error": validation["error"]}
-    
+
     # Step 2: Transform
     transform_result = await transform_data(input_dir, output_dir)
-    
+
     # Step 3: Report
     report = await generate_report(output_dir)
-    
+
     return {
         "success": True,
         "files_processed": transform_result["count"],
@@ -143,30 +143,30 @@ import asyncio
 
 async def process_batch(paths: list[str]) -> dict:
     """Process multiple files in parallel.
-    
+
     Args:
         paths: List of file paths to process.
-    
+
     Returns:
         Results for each file.
     """
     from skills.file_processor import process_file
-    
+
     # Process all files in parallel
     results = await asyncio.gather(
         *[process_file(path) for path in paths],
         return_exceptions=True
     )
-    
+
     successes = []
     failures = []
-    
+
     for path, result in zip(paths, results):
         if isinstance(result, Exception):
             failures.append({"path": path, "error": str(result)})
         else:
             successes.append({"path": path, "result": result})
-    
+
     return {
         "total": len(paths),
         "successes": successes,
@@ -184,17 +184,17 @@ Branch based on conditions:
 
 async def smart_process(path: str) -> dict:
     """Process a file based on its type.
-    
+
     Args:
         path: File path to process.
-    
+
     Returns:
         Processing result.
     """
     from skills.csv_processor import process_csv
     from skills.json_processor import process_json
     from skills.text_processor import process_text
-    
+
     if path.endswith(".csv"):
         return await process_csv(path)
     elif path.endswith(".json"):
@@ -212,13 +212,13 @@ Handle errors without failing completely:
 ```python
 async def resilient_batch(paths: list[str]) -> dict:
     """Process files with error resilience.
-    
+
     Continues processing even if some files fail.
     """
     from generated.mcp.filesystem import read_file
-    
+
     results = []
-    
+
     for path in paths:
         try:
             content = await read_file({"path": path})
@@ -233,7 +233,7 @@ async def resilient_batch(paths: list[str]) -> dict:
                 "status": "failed",
                 "error": str(e),
             })
-    
+
     return {
         "total": len(paths),
         "successful": len([r for r in results if r["status"] == "success"]),
@@ -255,21 +255,21 @@ async def with_retry(
     delay: float = 1.0,
 ) -> any:
     """Execute a function with retry logic.
-    
+
     Args:
         func: Async function to execute.
         args: Arguments to pass.
         max_retries: Maximum retry attempts.
         delay: Delay between retries in seconds.
-    
+
     Returns:
         Function result.
-    
+
     Raises:
         Exception: If all retries fail.
     """
     last_error = None
-    
+
     for attempt in range(max_retries):
         try:
             return await func(**args)
@@ -277,7 +277,7 @@ async def with_retry(
             last_error = e
             if attempt < max_retries - 1:
                 await asyncio.sleep(delay * (attempt + 1))
-    
+
     raise last_error
 ```
 
@@ -291,31 +291,31 @@ async def validated_process(
     options: dict,
 ) -> dict:
     """Process with input validation.
-    
+
     Args:
         path: File path (must exist).
         options: Processing options.
-    
+
     Returns:
         Processing result.
-    
+
     Raises:
         ValueError: If inputs are invalid.
     """
     from generated.mcp.filesystem import file_exists
-    
+
     # Validate path
     if not path:
         raise ValueError("Path cannot be empty")
-    
+
     if not await file_exists({"path": path}):
         raise ValueError(f"File not found: {path}")
-    
+
     # Validate options
     valid_modes = ["fast", "accurate", "balanced"]
     if options.get("mode") and options["mode"] not in valid_modes:
         raise ValueError(f"Invalid mode. Must be one of: {valid_modes}")
-    
+
     # Process
     return await _do_process(path, options)
 ```
@@ -329,28 +329,28 @@ Report progress for long-running skills:
 ```python
 async def long_running_task(items: list[str]) -> dict:
     """Process many items with progress reporting.
-    
+
     Args:
         items: Items to process.
-    
+
     Returns:
         Processing results.
     """
     total = len(items)
     processed = 0
-    
+
     print(f"Starting processing of {total} items...")
-    
+
     for i, item in enumerate(items):
         if i % 10 == 0:
             progress = (i / total) * 100
             print(f"Progress: {i}/{total} ({progress:.1f}%)")
-        
+
         await process_item(item)
         processed += 1
-    
+
     print(f"Complete! Processed {processed} items.")
-    
+
     return {"processed": processed}
 ```
 
@@ -363,14 +363,14 @@ import json
 
 async def logged_process(path: str) -> dict:
     """Process with structured logging.
-    
+
     Outputs JSON log lines for easy parsing.
     """
     def log(event: str, **data):
         print(json.dumps({"event": event, **data}))
-    
+
     log("start", path=path)
-    
+
     try:
         result = await do_process(path)
         log("success", path=path, result=result)
@@ -395,7 +395,7 @@ async def test_count_words():
     # Create test file
     with open("/tmp/test.txt", "w") as f:
         f.write("one two three")
-    
+
     result = await count_words("/tmp/test.txt")
     assert result == 3
 
@@ -404,7 +404,7 @@ async def test_count_words_empty():
     """Test with empty file."""
     with open("/tmp/empty.txt", "w") as f:
         f.write("")
-    
+
     result = await count_words("/tmp/empty.txt")
     assert result == 0
 ```
@@ -418,10 +418,10 @@ from unittest.mock import AsyncMock, patch
 async def test_with_mocked_tools():
     """Test skill with mocked MCP tools."""
     mock_read = AsyncMock(return_value="hello world")
-    
+
     with patch("generated.mcp.filesystem.read_file", mock_read):
         result = await count_words("/any/path")
-        
+
     assert result == 2
     mock_read.assert_called_once_with({"path": "/any/path"})
 ```

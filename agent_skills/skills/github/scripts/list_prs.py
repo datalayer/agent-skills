@@ -125,7 +125,7 @@ def format_table(prs: list[dict]) -> str:
 class _HelpOnErrorParser(argparse.ArgumentParser):
     """ArgumentParser that prints full help on invalid arguments."""
 
-    def error(self, message: str) -> None:  # noqa: D401
+    def error(self, message: str) -> None:
         params_help = (
             "\nValid parameters for list_prs:\n"
             "  repo (positional)  owner/repo  e.g. 'datalayer/agent-runtimes'\n"
@@ -141,9 +141,7 @@ class _HelpOnErrorParser(argparse.ArgumentParser):
 
 
 def main():
-    parser = _HelpOnErrorParser(
-        description="List pull requests for a GitHub repository."
-    )
+    parser = _HelpOnErrorParser(description="List pull requests for a GitHub repository.")
     parser.add_argument(
         "repo",
         help="Repository in format 'owner/repo'",

@@ -127,7 +127,7 @@ class Skill(BaseModel):
         return self.metadata.description
 
     @classmethod
-    def from_skill_md(cls, content: str) -> "Skill":
+    def from_skill_md(cls, content: str) -> Skill:
         """Parse a SKILL.md file into a Skill object.
 
         Args:
@@ -139,9 +139,7 @@ class Skill(BaseModel):
         import re
 
         # Extract YAML frontmatter
-        frontmatter_match = re.match(
-            r"^---\s*\n(.*?)\n---\s*\n(.*)$", content, re.DOTALL
-        )
+        frontmatter_match = re.match(r"^---\s*\n(.*?)\n---\s*\n(.*)$", content, re.DOTALL)
 
         if not frontmatter_match:
             raise ValueError("Invalid SKILL.md format: missing YAML frontmatter")

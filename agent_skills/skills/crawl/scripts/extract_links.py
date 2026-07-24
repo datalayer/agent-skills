@@ -101,9 +101,7 @@ def main():
         default=True,
         help="Convert relative URLs to absolute (default: True)",
     )
-    parser.add_argument(
-        "--filter", "-f", help="Only include links containing this pattern"
-    )
+    parser.add_argument("--filter", "-f", help="Only include links containing this pattern")
     parser.add_argument(
         "--timeout", "-t", type=float, default=30.0, help="Request timeout in seconds"
     )
