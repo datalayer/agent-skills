@@ -8,7 +8,7 @@
 
 [![Become a Sponsor](https://img.shields.io/static/v1?label=Become%20a%20Sponsor&message=%E2%9D%A4&logo=GitHub&style=flat&color=1ABC9C)](https://github.com/sponsors/datalayer)
 
-# 🧰 Agent Skills
+# 🤖 🧰 Agent Skills
 
 [![PyPI - Version](https://img.shields.io/pypi/v/agent-skills)](https://pypi.org/project/agent-skills)
 
@@ -25,10 +25,10 @@ Agent Codemode consumes skills from this package. If you are using agent-codemod
 ### How It Works
 
 1. **Skills are code files**: Python files in a `skills/` directory with async functions
-2. **Agents discover skills**: By listing the skills directory and reading file contents
-3. **Agents create skills**: By writing Python files to the skills directory
-4. **Agents execute skills**: By importing and calling them in executed code
-5. **Agents compose skills**: By importing multiple skills together
+1. **Agents discover skills**: By listing the skills directory and reading file contents
+1. **Agents create skills**: By writing Python files to the skills directory
+1. **Agents execute skills**: By importing and calling them in executed code
+1. **Agents compose skills**: By importing multiple skills together
 
 This pattern allows agents to evolve their own toolbox over time, saving useful compositions as reusable skills.
 
@@ -59,7 +59,7 @@ Skills can be loaded in two ways that work independently or together.
 
 ### Path-based loading
 
-Point the toolset at a local directory tree.  Every sub-directory that contains
+Point the toolset at a local directory tree. Every sub-directory that contains
 a `SKILL.md` file is discovered automatically at first use.
 
 Use this when skills are checked into the same repository or mounted at a
@@ -79,10 +79,15 @@ agent = Agent(model='openai:gpt-4o', toolsets=[toolset])
 # Agent gets: list_skills, load_skill, read_skill_resource, run_skill_script
 ```
 
+`SandboxExecutor` works with any code-sandboxes backend. For Kaggle batch runs,
+you can provide a Kaggle sandbox configured with a GPU/accelerator (for example
+`gpu="T4"` or `gpu="NvidiaTeslaT4"`) and skill scripts will run with that
+accelerator request.
+
 ### Module-based loading
 
 Load skills that are packaged inside an installed Python library using
-`AgentSkill.from_module()`.  This handles both regular packages and namespace
+`AgentSkill.from_module()`. This handles both regular packages and namespace
 packages (directories without `__init__.py`).
 
 Use this when skills are distributed as part of a pip-installable package
@@ -180,6 +185,7 @@ Instructions for extracting content from PDF files...
 ```
 
 With optional directories:
+
 - `resources/`: Reference documents, templates, examples
 - `references/`: Additional documentation loaded on demand (spec)
 - `assets/`: Static resources like templates or data files (spec)
@@ -212,19 +218,19 @@ Create a Python file in the skills directory:
 
 async def analyze_csv(file_path: str) -> dict:
     """Analyze a CSV file.
-    
+
     Args:
         file_path: Path to the CSV file.
-    
+
     Returns:
         Statistics about the file.
     """
     from generated.mcp.filesystem import read_file
-    
+
     content = await read_file({"path": file_path})
     lines = content.split("\n")
     headers = lines[0].split(",") if lines else []
-    
+
     return {
         "rows": len(lines) - 1,
         "columns": len(headers),
@@ -236,7 +242,7 @@ async def analyze_csv(file_path: str) -> dict:
 if __name__ == "__main__":
     import asyncio
     import sys
-    
+
     result = asyncio.run(analyze_csv(sys.argv[1]))
     import json
     print(json.dumps(result, indent=2))
@@ -250,11 +256,11 @@ skills.create(
     code='''
 async def analyze_csv(file_path: str) -> dict:
     from generated.mcp.filesystem import read_file
-    
+
     content = await read_file({"path": file_path})
     lines = content.split("\\n")
     headers = lines[0].split(",") if lines else []
-    
+
     return {
         "rows": len(lines) - 1,
         "columns": len(headers),
@@ -304,24 +310,24 @@ Skills can import and use other skills:
 
 async def batch_analyze(directory: str) -> list:
     """Analyze all CSV files in a directory.
-    
+
     Args:
         directory: Directory containing CSV files.
-    
+
     Returns:
         List of analysis results.
     """
     from skills.analyze_csv import analyze_csv
     from generated.mcp.filesystem import list_directory
-    
+
     entries = await list_directory({"path": directory})
     results = []
-    
+
     for entry in entries.get("entries", []):
         if entry.endswith(".csv"):
             result = await analyze_csv(f"{directory}/{entry}")
             results.append({"file": entry, **result})
-    
+
     return results
 ```
 
@@ -380,8 +386,8 @@ skills = setup_skills_directory("./workspace/skills")
 A skill file is a Python file with:
 
 1. **Module docstring**: Description of what the skill does
-2. **Async functions**: The skill's callable functions
-3. **Optional CLI support**: For running the skill directly
+1. **Async functions**: The skill's callable functions
+1. **Optional CLI support**: For running the skill directly
 
 ```python
 #!/usr/bin/env python3
@@ -394,22 +400,22 @@ what inputs it expects, and what outputs it produces.
 
 async def main_function(param1: str, param2: int = 10) -> dict:
     """Main function description.
-    
+
     Args:
         param1: First parameter description.
         param2: Second parameter with default.
-    
+
     Returns:
         Dictionary with results.
     """
     # Import tools and other skills
     from generated.mcp.filesystem import read_file
     from skills.helper_skill import helper_function
-    
+
     # Do the work
     content = await read_file({"path": param1})
     processed = await helper_function(content)
-    
+
     return {"result": processed, "count": param2}
 
 
@@ -418,14 +424,14 @@ if __name__ == "__main__":
     import asyncio
     import sys
     import json
-    
+
     if len(sys.argv) < 2:
         print(f"Usage: python {sys.argv[0]} <param1> [param2]")
         sys.exit(1)
-    
+
     param1 = sys.argv[1]
     param2 = int(sys.argv[2]) if len(sys.argv) > 2 else 10
-    
+
     result = asyncio.run(main_function(param1, param2))
     print(json.dumps(result, indent=2))
 ```
@@ -433,12 +439,12 @@ if __name__ == "__main__":
 ## Best Practices
 
 1. **One main function per skill**: Name it the same as the file
-2. **Include docstrings**: Document what the skill does and its parameters
-3. **Add CLI support**: Makes skills runnable standalone for testing
-4. **Keep skills focused**: Do one thing well
-5. **Compose skills**: Build complex workflows from simple skills
-6. **Use type hints**: For better documentation and IDE support
-7. **Handle errors gracefully**: Return meaningful error information
+1. **Include docstrings**: Document what the skill does and its parameters
+1. **Add CLI support**: Makes skills runnable standalone for testing
+1. **Keep skills focused**: Do one thing well
+1. **Compose skills**: Build complex workflows from simple skills
+1. **Use type hints**: For better documentation and IDE support
+1. **Handle errors gracefully**: Return meaningful error information
 
 ## Advanced: Managed Skills (Optional)
 

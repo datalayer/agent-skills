@@ -37,11 +37,13 @@ def configure(
     sandbox_variant: str = "eval",
 ) -> SkillsManager:
     """Configure the Agent Skills MCP server.
-    
+
     Args:
         skills_path: Directory for skill storage.
-        sandbox_variant: Sandbox type for execution.
-        
+        sandbox_variant: Sandbox type for execution (a ``code_sandboxes``
+            variant, default: ``eval``; e.g. ``monty``, ``docker``,
+            ``jupyter``, ``colab``, ``kaggle``, ``modal``, ``datalayer``).
+
     Returns:
         Configured SkillsManager.
     """
@@ -56,12 +58,14 @@ def get_manager() -> SkillsManager:
     global _manager
     if _manager is None:
         configure()
+    assert _manager is not None
     return _manager
 
 
 # =============================================================================
 # Skill Discovery Tools
 # =============================================================================
+
 
 @mcp.tool()
 async def search_skills(
@@ -70,33 +74,33 @@ async def search_skills(
     limit: int = 10,
 ) -> dict[str, Any]:
     """Search for skills matching a query.
-    
+
     Find relevant skills based on natural language description,
     name, or tags.
-    
+
     Args:
         query: Natural language description of what you need.
                Examples: "data analysis", "file processing"
         tags: Optional list of tags to filter by.
         limit: Maximum number of results (default: 10).
-        
+
     Returns:
         Dictionary with:
         - skills: List of matching skills (name, description, tags)
         - total: Total number of matches
         - query: The search query used
-        
+
     Example:
         # Find data processing skills
         result = search_skills("process CSV files")
     """
     manager = get_manager()
     result = manager.search(query, limit=limit)
-    
+
     skills = result.skills
     if tags:
         skills = [s for s in skills if any(t in s.metadata.tags for t in tags)]
-    
+
     return {
         "skills": [
             {
@@ -119,19 +123,19 @@ async def list_skills(
     limit: int = 50,
 ) -> dict[str, Any]:
     """List all available skills.
-    
+
     Get an overview of all skills that can be executed.
-    
+
     Args:
         tags: Optional filter by tags.
         limit: Maximum number to return (default: 50).
-        
+
     Returns:
         Dictionary with list of skills.
     """
     manager = get_manager()
     skills = manager.list(tags=tags, limit=limit)
-    
+
     return {
         "skills": [
             {
@@ -149,28 +153,28 @@ async def list_skills(
 @mcp.tool()
 async def get_skill(skill_id: str) -> dict[str, Any]:
     """Get detailed information about a skill.
-    
+
     Retrieve the full skill definition including instructions
     and code.
-    
+
     Args:
         skill_id: The skill's unique ID or name.
-        
+
     Returns:
         Dictionary with full skill details.
     """
     manager = get_manager()
-    
+
     # Try by ID first
     skill = manager.retrieve(skill_id)
-    
+
     # Try by name if not found
     if not skill:
         skill = manager.get(skill_id)
-    
+
     if not skill:
         return {"error": f"Skill not found: {skill_id}"}
-    
+
     return {
         "skill_id": skill.skill_id,
         "name": skill.name,
@@ -188,6 +192,7 @@ async def get_skill(skill_id: str) -> dict[str, Any]:
 # Skill Execution Tools
 # =============================================================================
 
+
 @mcp.tool()
 async def run_skill(
     skill_id: str,
@@ -195,14 +200,14 @@ async def run_skill(
     timeout: float = 30.0,
 ) -> dict[str, Any]:
     """Execute a skill.
-    
+
     Run a skill with the provided arguments in an isolated sandbox.
-    
+
     Args:
         skill_id: The skill's unique ID or name.
         arguments: Arguments to pass to the skill (as variables).
         timeout: Maximum execution time in seconds.
-        
+
     Returns:
         Dictionary with:
         - success: Whether execution completed
@@ -210,18 +215,18 @@ async def run_skill(
         - logs: Captured stdout/stderr
         - execution_time: Time taken
         - error: Error message if failed
-        
+
     Example:
         # Run a data analysis skill
         result = run_skill("analyze_csv", {"file_path": "data.csv"})
     """
     manager = get_manager()
-    
+
     # Find the skill
     skill = manager.retrieve(skill_id)
     if not skill:
         skill = manager.get(skill_id)
-    
+
     if not skill:
         return {
             "success": False,
@@ -230,7 +235,7 @@ async def run_skill(
             "execution_time": 0,
             "error": f"Skill not found: {skill_id}",
         }
-    
+
     # Activate the skill
     if not manager.activate(skill):
         return {
@@ -240,10 +245,10 @@ async def run_skill(
             "execution_time": 0,
             "error": "Skill activation failed",
         }
-    
+
     # Execute
     execution = await manager.execute(skill, arguments, timeout)
-    
+
     return {
         "success": execution.success,
         "result": execution.result,
@@ -258,6 +263,7 @@ async def run_skill(
 # Skill Management Tools
 # =============================================================================
 
+
 @mcp.tool()
 async def create_skill(
     name: str,
@@ -268,9 +274,9 @@ async def create_skill(
     tags: Optional[list[str]] = None,
 ) -> dict[str, Any]:
     """Create a new skill.
-    
+
     Define a reusable skill with instructions and optional code.
-    
+
     Args:
         name: Unique name for the skill.
         description: What the skill does (1-2 sentences).
@@ -278,10 +284,10 @@ async def create_skill(
         python_code: Optional Python implementation.
         allowed_tools: List of tools this skill can use.
         tags: Tags for categorization.
-        
+
     Returns:
         Dictionary with created skill info.
-        
+
     Example:
         create_skill(
             name="analyze_csv",
@@ -292,7 +298,7 @@ async def create_skill(
         )
     """
     manager = get_manager()
-    
+
     try:
         skill = manager.create(
             name=name,
@@ -302,7 +308,7 @@ async def create_skill(
             allowed_tools=allowed_tools,
             tags=tags,
         )
-        
+
         return {
             "success": True,
             "skill_id": skill.skill_id,
@@ -328,18 +334,18 @@ async def update_skill(
     tags: Optional[list[str]] = None,
 ) -> dict[str, Any]:
     """Update an existing skill.
-    
+
     Modify any of the skill's properties.
-    
+
     Args:
         skill_id: The skill's unique ID.
         Other args: Fields to update (None = keep current).
-        
+
     Returns:
         Dictionary with update status.
     """
     manager = get_manager()
-    
+
     skill = manager.update(
         skill_id=skill_id,
         name=name,
@@ -348,7 +354,7 @@ async def update_skill(
         python_code=python_code,
         tags=tags,
     )
-    
+
     if skill:
         return {
             "success": True,
@@ -368,19 +374,19 @@ async def update_skill(
 @mcp.tool()
 async def delete_skill(skill_id: str) -> dict[str, Any]:
     """Delete a skill.
-    
+
     Permanently remove a skill.
-    
+
     Args:
         skill_id: The skill's unique ID.
-        
+
     Returns:
         Dictionary with deletion status.
     """
     manager = get_manager()
-    
+
     success = manager.delete(skill_id)
-    
+
     return {
         "success": success,
         "error": None if success else f"Skill not found: {skill_id}",
@@ -391,26 +397,27 @@ async def delete_skill(skill_id: str) -> dict[str, Any]:
 # Skill Versioning Tools
 # =============================================================================
 
+
 @mcp.tool()
 async def create_skill_version(
     skill_id: str,
     version: str,
 ) -> dict[str, Any]:
     """Create a new version of a skill.
-    
+
     Save the current state of a skill as a named version.
-    
+
     Args:
         skill_id: The skill's unique ID.
         version: Version string (e.g., "1.1.0").
-        
+
     Returns:
         Dictionary with version info.
     """
     manager = get_manager()
-    
+
     version_obj = manager.create_version(skill_id, version)
-    
+
     if version_obj:
         return {
             "success": True,
@@ -430,17 +437,17 @@ async def create_skill_version(
 @mcp.tool()
 async def list_skill_versions(skill_id: str) -> dict[str, Any]:
     """List all versions of a skill.
-    
+
     Args:
         skill_id: The skill's unique ID.
-        
+
     Returns:
         Dictionary with list of versions.
     """
     manager = get_manager()
-    
+
     versions = manager.list_versions(skill_id)
-    
+
     return {
         "versions": [
             {
@@ -459,30 +466,32 @@ async def list_skill_versions(skill_id: str) -> dict[str, Any]:
 # Discovery Tool (for importing from SKILL.md files)
 # =============================================================================
 
+
 @mcp.tool()
 async def discover_skills(path: Optional[str] = None) -> dict[str, Any]:
     """Discover skills from a directory.
-    
+
     Scan a directory for SKILL.md files and import them.
-    
+
     Args:
         path: Optional path to scan (uses default if not provided).
-        
+
     Returns:
         Dictionary with discovered skills info.
     """
     manager = get_manager()
-    
+
     if path:
         # Temporarily update path
         from pathlib import Path
+
         original_path = manager.skills_path
         manager.skills_path = Path(path)
         skills = manager.discover()
         manager.skills_path = original_path
     else:
         skills = manager.discover()
-    
+
     return {
         "discovered": len(skills),
         "skills": [
@@ -504,4 +513,3 @@ def run() -> None:
 
 if __name__ == "__main__":
     run()
-

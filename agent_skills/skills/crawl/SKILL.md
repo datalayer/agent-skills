@@ -90,6 +90,7 @@ author: Datalayer
 ```
 
 Notes:
+
 - `fetch_js_page` requires Playwright + Chromium in the execution environment.
 
 ## Direct CLI Examples

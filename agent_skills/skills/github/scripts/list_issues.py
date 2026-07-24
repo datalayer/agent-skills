@@ -118,7 +118,7 @@ def format_table(issues: list[dict]) -> str:
 class _HelpOnErrorParser(argparse.ArgumentParser):
     """ArgumentParser that prints full help on invalid arguments."""
 
-    def error(self, message: str) -> None:  # noqa: D401
+    def error(self, message: str) -> None:
         params_help = (
             "\nValid parameters for list_issues:\n"
             "  repo (positional)  owner/repo  e.g. 'datalayer/agent-runtimes'\n"

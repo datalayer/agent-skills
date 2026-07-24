@@ -17,7 +17,6 @@ from typing import Any
 
 import httpx
 
-
 API_PATH = "/api/ai-agents/v1/events"
 
 

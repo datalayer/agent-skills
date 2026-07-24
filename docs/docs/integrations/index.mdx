@@ -168,10 +168,10 @@ skill = AgentSkill(
 @skill.script
 async def analyze(ctx, file_path: str) -> dict:
     """Analyze a data file.
-    
+
     Args:
         file_path: Path to the file to analyze.
-    
+
     Returns:
         Analysis results.
     """
@@ -188,7 +188,7 @@ def get_reference() -> str:
     """Get reference documentation."""
     return """
     # Data Analyzer Reference
-    
+
     Supported formats:
     - CSV files
     - JSON files
@@ -297,19 +297,19 @@ Skills can access dependencies via context:
 @skill.script
 async def process(ctx, path: str) -> str:
     """Process a file using injected dependencies.
-    
+
     Args:
         path: File path to process.
-    
+
     Returns:
         Processing result.
     """
     # Access filesystem dependency
     content = await ctx.deps.filesystem.read(path)
-    
+
     # Access database dependency
     await ctx.deps.database.insert({"path": path, "content": content})
-    
+
     return f"Processed {path}"
 ```
 

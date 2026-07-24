@@ -104,9 +104,7 @@ def main():
         default=0,
         help="Additional wait time in milliseconds after page load",
     )
-    parser.add_argument(
-        "--selector", "-s", help="Wait for a specific CSS selector to appear"
-    )
+    parser.add_argument("--selector", "-s", help="Wait for a specific CSS selector to appear")
     parser.add_argument(
         "--timeout",
         "-t",
@@ -114,9 +112,7 @@ def main():
         default=30000,
         help="Page load timeout in milliseconds (default: 30000)",
     )
-    parser.add_argument(
-        "--html", action="store_true", help="Output raw HTML instead of text"
-    )
+    parser.add_argument("--html", action="store_true", help="Output raw HTML instead of text")
 
     args = parser.parse_args()
 

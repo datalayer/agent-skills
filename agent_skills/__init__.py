@@ -91,19 +91,19 @@ This is the recommended approach for building agent skills.
 
 Example:
     from agent_skills import SkillDirectory, setup_skills_directory
-    
+
     # Set up skills directory (call once during initialization)
     skills = setup_skills_directory("./workspace/skills")
-    
+
     # List available skills
     for skill in skills.list():
         print(f"{skill.name}: {skill.description}")
-    
+
     # Get and execute a skill
     skill = skills.get("analyze_csv")
     func = skill.get_function()
     result = await func("/data/file.csv")
-    
+
     # Create a new skill
     skills.create(
         name="process_batch",
@@ -120,14 +120,14 @@ use the SkillsManager and MCP server.
 
 Example:
     from agent_skills import SkillsManager, Skill
-    
+
     # Create a skill manager
     manager = SkillsManager("./skills")
-    
+
     # Discover and search skills
     skills = manager.discover()
     result = manager.search("data analysis")
-    
+
     # MCP server for agent integration
     from agent_skills import skills_server, configure_server
     configure_server(skills_path="./skills")
@@ -135,23 +135,41 @@ Example:
 """
 
 # Primary Pattern: Skills as Code Files
+from .codegen import generate_skill_file, generate_skill_from_template
 from .files import (
-    SkillFile,
     SkillDirectory,
+    SkillFile,
     setup_skills_directory,
 )
 
 # Helpers for skill composition
 from .helpers import (
-    wait_for,
+    RateLimiter,
+    parallel,
     retry,
     run_with_timeout,
-    parallel,
-    RateLimiter,
+    wait_for,
 )
 
 # Managed skills lifecycle
 from .manager import SkillsManager
+from .server import configure as configure_server
+from .server import mcp as skills_server
+
+# Pydantic AI Integration (SkillsToolset pattern from PR #3780)
+from .toolset import (
+    PYDANTIC_AI_AVAILABLE,
+    SKILLS_ENTRYPOINT_GROUP,
+    AgentSkill,
+    AgentSkillResource,
+    AgentSkillScript,
+    AgentSkillsToolset,
+    CallableExecutor,
+    SandboxExecutor,
+    ScriptExecutionResult,
+    SkillScriptExecutorProtocol,
+    discover_entrypoint_skills,
+)
 from .types import (
     Skill,
     SkillContext,
@@ -162,63 +180,46 @@ from .types import (
     SkillStatus,
     SkillVersion,
 )
-from .server import mcp as skills_server, configure as configure_server
-from .codegen import generate_skill_file, generate_skill_from_template
-
-# Pydantic AI Integration (SkillsToolset pattern from PR #3780)
-from .toolset import (
-    AgentSkillsToolset,
-    AgentSkill,
-    AgentSkillResource,
-    AgentSkillScript,
-    SandboxExecutor,
-    CallableExecutor,
-    SkillScriptExecutorProtocol,
-    ScriptExecutionResult,
-    PYDANTIC_AI_AVAILABLE,
-    discover_entrypoint_skills,
-    SKILLS_ENTRYPOINT_GROUP,
-)
 
 __all__ = [
-    # Manager
-    "SkillsManager",
-    # Models
-    "Skill",
-    "SkillMetadata",
-    "SkillHooks",
-    "SkillContext",
-    "SkillStatus",
-    "SkillExecution",
-    "SkillVersion",
-    "SkillSearchResult",
-    # Code Generation
-    "generate_skill_file",
-    "generate_skill_from_template",
-    # Primary Pattern: Skills as Code Files
-    "SkillFile",
-    "SkillDirectory",
-    "setup_skills_directory",
-    # Helpers for skill composition
-    "wait_for",
-    "retry",
-    "run_with_timeout",
-    "parallel",
-    "RateLimiter",
-    # MCP Server (Optional)
-    "skills_server",
-    "configure_server",
-    # Pydantic AI Integration
-    "AgentSkillsToolset",
+    "PYDANTIC_AI_AVAILABLE",
+    "SKILLS_ENTRYPOINT_GROUP",
     "AgentSkill",
     "AgentSkillResource",
     "AgentSkillScript",
-    "SandboxExecutor",
+    # Pydantic AI Integration
+    "AgentSkillsToolset",
     "CallableExecutor",
-    "SkillScriptExecutorProtocol",
+    "RateLimiter",
+    "SandboxExecutor",
     "ScriptExecutionResult",
-    "PYDANTIC_AI_AVAILABLE",
+    # Models
+    "Skill",
+    "SkillContext",
+    "SkillDirectory",
+    "SkillExecution",
+    # Primary Pattern: Skills as Code Files
+    "SkillFile",
+    "SkillHooks",
+    "SkillMetadata",
+    "SkillScriptExecutorProtocol",
+    "SkillSearchResult",
+    "SkillStatus",
+    "SkillVersion",
+    # Manager
+    "SkillsManager",
+    "configure_server",
     # Entrypoint Discovery
     "discover_entrypoint_skills",
-    "SKILLS_ENTRYPOINT_GROUP",
+    # Code Generation
+    "generate_skill_file",
+    "generate_skill_from_template",
+    "parallel",
+    "retry",
+    "run_with_timeout",
+    "setup_skills_directory",
+    # MCP Server (Optional)
+    "skills_server",
+    # Helpers for skill composition
+    "wait_for",
 ]

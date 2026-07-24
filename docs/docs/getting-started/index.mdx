@@ -46,10 +46,10 @@ Create a file `skills/hello_world.py`:
 
 async def greet(name: str = "World") -> str:
     """Greet someone by name.
-    
+
     Args:
         name: The name to greet.
-    
+
     Returns:
         A greeting message.
     """
@@ -58,10 +58,10 @@ async def greet(name: str = "World") -> str:
 
 async def greet_many(names: list[str]) -> list[str]:
     """Greet multiple people.
-    
+
     Args:
         names: List of names to greet.
-    
+
     Returns:
         List of greeting messages.
     """
@@ -105,33 +105,33 @@ Skills become powerful when they compose MCP tools:
 
 async def analyze_directory(path: str) -> dict:
     """Analyze all files in a directory.
-    
+
     Args:
         path: Directory path to analyze.
-    
+
     Returns:
         Analysis results with file counts and sizes.
     """
     from generated.mcp.filesystem import list_directory, read_file
-    
+
     entries = await list_directory({"path": path})
-    
+
     results = {
         "total_files": 0,
         "total_size": 0,
         "by_extension": {},
     }
-    
+
     for entry in entries["entries"]:
         if not entry.endswith("/"):  # Skip directories
             results["total_files"] += 1
-            
+
             content = await read_file({"path": f"{path}/{entry}"})
             results["total_size"] += len(content)
-            
+
             ext = entry.rsplit(".", 1)[-1] if "." in entry else "none"
             results["by_extension"][ext] = results["by_extension"].get(ext, 0) + 1
-    
+
     return results
 ```
 
@@ -187,5 +187,5 @@ print(skill.metadata.allowed_tools)  # ["filesystem__list_directory", ...]
 ## Next Steps
 
 - [Skills Manager](../manager/) - Full lifecycle management
-- [Integration](../integration/) - Use skills with AI agents
+- [Integrations](../integrations/) - Use skills with AI agents
 - [Skill Patterns](../patterns/) - Best practices and patterns

@@ -112,6 +112,7 @@ skills_server.run()
 ## Output
 
 Running the example produces output for each demonstration, showing:
+
 - Created skills with IDs and metadata
 - Parsed SKILL.md content
 - Discovery and search results

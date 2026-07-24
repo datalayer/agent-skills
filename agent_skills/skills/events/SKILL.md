@@ -33,20 +33,24 @@ author: Datalayer
 Subcommands and parameters:
 
 1. `create`
+
 - `args`: `["create"]`
 - required `kwargs`: `agent_id`, `title`
 - optional `kwargs`: `kind`, `status`, `payload`, `metadata`
 - `payload` and `metadata` must be JSON object strings.
 
 2. `get`
+
 - `args`: `["get", "<event_id>"]`
 - `kwargs`: none
 
 3. `list`
+
 - `args`: `["list"]`
 - optional `kwargs`: `agent_id`, `kind`, `status`, `limit`, `offset`
 
 4. `update`
+
 - `args`: `["update", "<event_id>"]`
 - optional `kwargs`: `title`, `kind`, `status`, `payload`, `metadata`
 - `payload` and `metadata` must be JSON object strings.

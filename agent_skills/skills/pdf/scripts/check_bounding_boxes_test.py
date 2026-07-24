@@ -59,9 +59,7 @@ class TestGetBoundingBoxMessages(unittest.TestCase):
 
         stream = self.create_json_stream(data)
         messages = get_bounding_box_messages(stream)
-        self.assertTrue(
-            any("FAILURE" in msg and "intersection" in msg for msg in messages)
-        )
+        self.assertTrue(any("FAILURE" in msg and "intersection" in msg for msg in messages))
         self.assertFalse(any("SUCCESS" in msg for msg in messages))
 
     def test_intersection_between_different_fields(self):
@@ -92,9 +90,7 @@ class TestGetBoundingBoxMessages(unittest.TestCase):
 
         stream = self.create_json_stream(data)
         messages = get_bounding_box_messages(stream)
-        self.assertTrue(
-            any("FAILURE" in msg and "intersection" in msg for msg in messages)
-        )
+        self.assertTrue(any("FAILURE" in msg and "intersection" in msg for msg in messages))
         self.assertFalse(any("SUCCESS" in msg for msg in messages))
 
     def test_different_pages_no_intersection(self):

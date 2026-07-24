@@ -60,9 +60,7 @@ def get_repo(owner: str, repo: str) -> dict:
         sys.exit(1)
     elif response.status_code == 404:
         print(f"Error: Repository '{owner}/{repo}' not found", file=sys.stderr)
-        print(
-            "(Check if you have access and the token has 'repo' scope)", file=sys.stderr
-        )
+        print("(Check if you have access and the token has 'repo' scope)", file=sys.stderr)
         sys.exit(1)
 
     response.raise_for_status()
@@ -117,7 +115,7 @@ def format_repo_details(repo: dict) -> str:
 class _HelpOnErrorParser(argparse.ArgumentParser):
     """ArgumentParser that prints full help on invalid arguments."""
 
-    def error(self, message: str) -> None:  # noqa: D401
+    def error(self, message: str) -> None:
         params_help = (
             "\nValid parameters for get_repo:\n"
             "  repo (positional)  owner/repo  e.g. 'datalayer/jupyter-ui'\n"
@@ -131,9 +129,7 @@ class _HelpOnErrorParser(argparse.ArgumentParser):
 
 
 def main():
-    parser = _HelpOnErrorParser(
-        description="Get details for a specific GitHub repository."
-    )
+    parser = _HelpOnErrorParser(description="Get details for a specific GitHub repository.")
     parser.add_argument(
         "repo",
         help="Repository in format 'owner/repo' (e.g., 'datalayer/jupyter-ui')",

@@ -59,9 +59,7 @@ def check_robots(url: str, user_agent: str = "*") -> dict:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Check if a URL is allowed by robots.txt."
-    )
+    parser = argparse.ArgumentParser(description="Check if a URL is allowed by robots.txt.")
     parser.add_argument("url", help="The URL to check")
     parser.add_argument(
         "--user-agent",

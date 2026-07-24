@@ -52,9 +52,7 @@ def crawl_site(
         "User-Agent": "Mozilla/5.0 (compatible; DataBot/1.0)",
     }
 
-    with httpx.Client(
-        headers=headers, timeout=timeout, follow_redirects=True
-    ) as client:
+    with httpx.Client(headers=headers, timeout=timeout, follow_redirects=True) as client:
         while queue and len(visited) < max_pages:
             url, depth = queue.popleft()
 
@@ -88,11 +86,7 @@ def crawl_site(
                     element.decompose()
 
                 # Extract title
-                title = (
-                    soup.title.string.strip()
-                    if soup.title and soup.title.string
-                    else ""
-                )
+                title = soup.title.string.strip() if soup.title and soup.title.string else ""
 
                 # Extract text (limit to first 5000 chars for efficiency)
                 text = soup.get_text(separator="\n", strip=True)[:5000]
@@ -110,9 +104,7 @@ def crawl_site(
                         href = a.get("href", "").strip()
 
                         # Skip empty, anchors, javascript, etc.
-                        if not href or href.startswith(
-                            ("#", "javascript:", "mailto:", "tel:")
-                        ):
+                        if not href or href.startswith(("#", "javascript:", "mailto:", "tel:")):
                             continue
 
                         next_url = urljoin(url, href)

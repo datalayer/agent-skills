@@ -110,9 +110,7 @@ def format_table(repos: list[dict], total: int) -> str:
     lines = []
     lines.append(f"Found {total} repositories (showing {len(repos)})")
     lines.append("")
-    lines.append(
-        f"{'Name':<45} {'Language':<12} {'⭐ Stars':<10} {'🍴 Forks':<10} {'Updated':<12}"
-    )
+    lines.append(f"{'Name':<45} {'Language':<12} {'⭐ Stars':<10} {'🍴 Forks':<10} {'Updated':<12}")
     lines.append("-" * 95)
 
     for repo in repos:
@@ -130,7 +128,7 @@ def format_table(repos: list[dict], total: int) -> str:
 class _HelpOnErrorParser(argparse.ArgumentParser):
     """ArgumentParser that prints full help on invalid arguments."""
 
-    def error(self, message: str) -> None:  # noqa: D401
+    def error(self, message: str) -> None:
         params_help = (
             "\nValid parameters for search_repos:\n"
             "  query (positional)  search text  e.g. 'jupyter notebook'\n"

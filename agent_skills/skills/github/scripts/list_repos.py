@@ -101,9 +101,7 @@ def format_table(repos: list[dict]) -> str:
         return "No repositories found."
 
     lines = []
-    lines.append(
-        f"{'Visibility':<10} {'Name':<50} {'Language':<15} {'Stars':<8} {'Updated':<12}"
-    )
+    lines.append(f"{'Visibility':<10} {'Name':<50} {'Language':<15} {'Stars':<8} {'Updated':<12}")
     lines.append("-" * 95)
 
     for repo in repos:
@@ -113,9 +111,7 @@ def format_table(repos: list[dict]) -> str:
         stars = str(repo.get("stargazers_count", 0))
         updated = repo.get("updated_at", "")[:10]
 
-        lines.append(
-            f"{visibility:<10} {name:<50} {language:<15} {stars:<8} {updated:<12}"
-        )
+        lines.append(f"{visibility:<10} {name:<50} {language:<15} {stars:<8} {updated:<12}")
 
     lines.append("-" * 95)
     lines.append(f"Total: {len(repos)} repositories")
@@ -126,7 +122,7 @@ def format_table(repos: list[dict]) -> str:
 class _HelpOnErrorParser(argparse.ArgumentParser):
     """ArgumentParser that prints full help on invalid arguments."""
 
-    def error(self, message: str) -> None:  # noqa: D401
+    def error(self, message: str) -> None:
         params_help = (
             "\nValid parameters for list_repos:\n"
             "  --visibility  all | public | private  (default: all)\n"

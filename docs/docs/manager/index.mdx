@@ -46,6 +46,13 @@ manager = SkillsManager(
 | `skills_path` | `str` | `"./skills"` | Directory for skill files |
 | `sandbox_variant` | `str` | `"eval"` | Sandbox for code execution |
 
+`sandbox_variant` values come from `code-sandboxes` (for example: `eval`,
+`jupyter`, `docker`, `colab`, `kaggle`, `modal`, `datalayer`, `monty`).
+Cloud notebook notes:
+
+- `colab` reuses an already-running Colab kernel (from explicit runtime values or a channels URL).
+- `kaggle` can create a kernel with a Kaggle API token, or attach to an existing session.
+
 ## CRUD Operations
 
 ### Create
@@ -270,10 +277,10 @@ Python files are parsed for functions and docstrings:
 
 async def main_function(input: str) -> str:
     """The main entry point.
-    
+
     Args:
         input: Input data.
-    
+
     Returns:
         Processed output.
     """
