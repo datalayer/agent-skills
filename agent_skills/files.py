@@ -22,7 +22,7 @@ import importlib.util
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable, List, Optional
 
 
 @dataclass
@@ -86,7 +86,9 @@ class SkillFile:
                 and isinstance(tree.body[0], ast.Expr)
                 and isinstance(tree.body[0].value, ast.Constant)
             ):
-                description = tree.body[0].value.value
+                docstring_value = tree.body[0].value.value
+                if isinstance(docstring_value, str):
+                    description = docstring_value
 
             # Find async functions (these are the skill's exported functions)
             for node in ast.walk(tree):
@@ -359,7 +361,7 @@ python skills/analyze_csv.py /data/sales.csv
 
         return None
 
-    def search(self, query: str, limit: int = 10) -> list[SkillFile]:
+    def search(self, query: str, limit: int = 10) -> List[SkillFile]:
         """Search for skills matching a query.
 
         Args:

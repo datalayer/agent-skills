@@ -17,6 +17,7 @@ import json
 import logging
 import os
 import uuid
+from builtins import list as builtins_list
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -271,7 +272,7 @@ class SkillsManager:
     # Skill Discovery
     # =========================================================================
 
-    def discover(self) -> list[Skill]:
+    def discover(self) -> builtins_list[Skill]:
         """Discover skills from the skills directory.
 
         Scans for:
@@ -282,7 +283,7 @@ class SkillsManager:
         Returns:
             List of discovered skills.
         """
-        discovered = []
+        discovered: builtins_list[Skill] = []
 
         if not self.skills_path.exists():
             return discovered
@@ -348,7 +349,7 @@ class SkillsManager:
         matches = []
 
         for skill in self._skills.values():
-            score = 0
+            score = 0.0
 
             # Check name
             if query_lower in skill.name.lower():
@@ -557,7 +558,7 @@ class SkillsManager:
         logger.info(f"Created version {version} for skill {skill_id}")
         return skill_version
 
-    def list_versions(self, skill_id: str) -> list[SkillVersion]:
+    def list_versions(self, skill_id: str) -> builtins_list[SkillVersion]:
         """List all versions of a skill.
 
         Args:

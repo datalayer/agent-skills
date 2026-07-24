@@ -58,6 +58,7 @@ def get_manager() -> SkillsManager:
     global _manager
     if _manager is None:
         configure()
+    assert _manager is not None
     return _manager
 
 

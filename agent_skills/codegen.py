@@ -72,7 +72,6 @@ def generate_skill_file(
 
     # Build parameter list for function signature
     params = parameters or []
-    param_strs = []
     required_params = []
     optional_params = []
 
@@ -192,7 +191,7 @@ def generate_skill_from_template(
     name: str,
     template: str,
     output_dir: Path = Path("./skills"),
-    **variables,
+    **variables: Any,
 ) -> Path:
     """Generate a skill file from a template.
 
@@ -209,7 +208,7 @@ def generate_skill_from_template(
         Path to the generated skill file.
     """
     # Built-in templates
-    templates = {
+    templates: dict[str, dict[str, Any]] = {
         "file_processor": {
             "description": "Process files in a directory",
             "code": """

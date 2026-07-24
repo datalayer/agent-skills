@@ -73,10 +73,13 @@ from typing import TYPE_CHECKING, Any, Callable, Protocol, TypedDict, runtime_ch
 
 from code_sandboxes import ExecutionResult
 
+CodeSandboxClient: Any | None = None
 try:  # Generic client — available in newer code_sandboxes releases.
-    from code_sandboxes import CodeSandboxClient
+    from code_sandboxes import CodeSandboxClient as _CodeSandboxClient
+
+    CodeSandboxClient = _CodeSandboxClient
 except ImportError:  # pragma: no cover - version skew with older code_sandboxes
-    CodeSandboxClient = None  # type: ignore[assignment,misc]
+    pass
 
 if TYPE_CHECKING:
     from pydantic_ai._run_context import RunContext
@@ -1599,7 +1602,11 @@ try:
     PYDANTIC_AI_AVAILABLE = True
 except ImportError:
     PYDANTIC_AI_AVAILABLE = False
-    AbstractToolset = object  # Fallback for type hints
+
+    class AbstractToolset:  # type: ignore[no-redef]
+        """Fallback AbstractToolset when pydantic-ai is unavailable."""
+
+        pass
 
 
 if PYDANTIC_AI_AVAILABLE:
@@ -2002,9 +2009,22 @@ if PYDANTIC_AI_AVAILABLE:
             try:
                 if script.is_callable():
                     # Programmatic script - returns string, wrap it
+                    script_callable = script.callable
+                    if script_callable is None:
+                        return ScriptExecutionResult(
+                            success=False,
+                            output="",
+                            stdout="",
+                            stderr="",
+                            execution_ok=False,
+                            execution_error=f"No callable configured for script: {script_name}",
+                            code_error=None,
+                            exit_code=None,
+                            error=f"No callable configured for script: {script_name}",
+                        )
                     callable_executor = CallableExecutor(default_timeout=self.script_timeout)
                     output = await callable_executor.execute_callable(
-                        script.callable,
+                        script_callable,
                         ctx,
                         args,
                         kwargs,

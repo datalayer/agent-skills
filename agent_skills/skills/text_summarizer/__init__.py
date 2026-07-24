@@ -164,10 +164,10 @@ def _score_sentences(sentences: list[str], full_text: str) -> list[tuple[str, fl
     filtered = [w for w in words if w not in stop_words and len(w) > 1]
     freq = Counter(filtered)
 
-    scored = []
+    scored: list[tuple[str, float, int]] = []
     for idx, sentence in enumerate(sentences):
         s_words = re.findall(r"\b\w+\b", sentence.lower())
-        score = sum(freq.get(w, 0) for w in s_words if w not in stop_words)
+        score = float(sum(freq.get(w, 0) for w in s_words if w not in stop_words))
         # Normalize by sentence length to avoid bias toward long sentences
         if s_words:
             score /= len(s_words)

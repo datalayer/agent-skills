@@ -92,6 +92,16 @@ strict_equality = true
 warn_unused_configs = true
 warn_unused_ignores = true
 warn_redundant_casts = true
+exclude = "(^agent_skills/skills/.*/scripts/.*\\.py$)"
+
+[[tool.mypy.overrides]]
+module = [
+  "code_sandboxes",
+  "code_sandboxes.*",
+  "agent_runtimes.context.identities",
+  "yaml",
+]
+ignore_missing_imports = true
 
 [tool.ruff]
 target-version = "py39"
