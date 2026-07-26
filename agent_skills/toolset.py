@@ -71,15 +71,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Protocol, TypedDict, runtime_checkable
 
-from code_sandboxes import ExecutionResult
-
-CodeSandboxClient: Any | None = None
-try:  # Generic client — available in newer code_sandboxes releases.
-    from code_sandboxes import CodeSandboxClient as _CodeSandboxClient
-
-    CodeSandboxClient = _CodeSandboxClient
-except ImportError:  # pragma: no cover - version skew with older code_sandboxes
-    pass
+from code_sandboxes import CodeSandboxClient, ExecutionResult
 
 if TYPE_CHECKING:
     from pydantic_ai._run_context import RunContext
@@ -341,7 +333,7 @@ class SandboxExecutor:
             # event loop — identical threading to the legacy path below, which
             # is what avoids a kernel deadlock when a skill is invoked through
             # the MCP proxy (the HTTP request already runs on a worker thread).
-            if CodeSandboxClient is not None and hasattr(effective_sandbox, "run_code"):
+            if hasattr(effective_sandbox, "run_code"):
                 client = CodeSandboxClient(effective_sandbox)
                 if hasattr(client, "execute_code_streaming") and hasattr(
                     effective_sandbox, "run_code_streaming"
@@ -409,85 +401,6 @@ class SandboxExecutor:
                     client.execute_code, execution_code, envs=identity_env
                 )
                 return _outcome_to_script_result(outcome)
-
-            # Legacy path: interpret the raw ExecutionResult directly. Kept for
-            # older code_sandboxes installs without CodeSandboxClient.
-            # Execute in sandbox - prefer run_code if available (supports envs)
-            if hasattr(effective_sandbox, "run_code"):
-                # Use run_code which supports envs parameter.
-                # Wrap in asyncio.to_thread to avoid blocking the event loop
-                # (important when called from a FastAPI async handler).
-                result: ExecutionResult = await asyncio.to_thread(
-                    effective_sandbox.run_code, execution_code, envs=identity_env
-                )
-
-                # Build structured result from ExecutionResult
-                # Use the stdout/stderr properties which handle text extraction from logs
-                stdout = result.stdout or ""
-                stderr = result.stderr or ""
-
-                # Check for execution failure (infrastructure error)
-                if not result.execution_ok:
-                    return ScriptExecutionResult(
-                        success=False,
-                        output=stderr or stdout,
-                        stdout=stdout,
-                        stderr=stderr,
-                        execution_ok=False,
-                        execution_error=result.execution_error or "Sandbox execution failed",
-                        code_error=None,
-                        exit_code=None,
-                        error=result.execution_error or "Sandbox execution failed",
-                    )
-
-                # Check for code error (user code exception)
-                if result.code_error:
-                    return ScriptExecutionResult(
-                        success=False,
-                        output=stderr or stdout,
-                        stdout=stdout,
-                        stderr=stderr,
-                        execution_ok=True,
-                        execution_error=None,
-                        code_error={
-                            "name": result.code_error.name,
-                            "value": result.code_error.value,
-                            "traceback": result.code_error.traceback or "",
-                        },
-                        exit_code=None,
-                        error=f"{result.code_error.name}: {result.code_error.value}",
-                    )
-
-                # Check for non-zero exit code (intentional sys.exit())
-                if result.exit_code is not None and result.exit_code != 0:
-                    return ScriptExecutionResult(
-                        success=False,
-                        output=stderr or stdout,
-                        stdout=stdout,
-                        stderr=stderr,
-                        execution_ok=True,
-                        execution_error=None,
-                        code_error=None,
-                        exit_code=result.exit_code,
-                        error=f"Script exited with code {result.exit_code}",
-                    )
-
-                # Success case
-                output = stdout
-                if not output and result.results:
-                    output = "\n".join(str(r.data) for r in result.results)
-
-                return ScriptExecutionResult(
-                    success=True,
-                    output=output,
-                    stdout=stdout,
-                    stderr=stderr,
-                    execution_ok=True,
-                    execution_error=None,
-                    code_error=None,
-                    exit_code=result.exit_code,  # Could be 0 or None
-                    error=None,
-                )
             elif asyncio.iscoroutinefunction(getattr(effective_sandbox, "execute", None)):
                 result = await asyncio.wait_for(
                     effective_sandbox.execute(execution_code),
