@@ -202,8 +202,6 @@ def test_discover_entrypoint_skills_loads_from_entrypoints(monkeypatch: pytest.M
     """discover_entrypoint_skills should load skills from registered entrypoints."""
     from types import SimpleNamespace
 
-    from agent_skills import toolset as toolset_module
-
     loaded_modules: list[str] = []
 
     def fake_entry_points(*, group: str):
@@ -343,7 +341,6 @@ Instructions for skill two.
         monkeypatch: pytest.MonkeyPatch,
     ):
         """discover_entrypoints=False should skip entrypoint scanning."""
-        from agent_skills import toolset as toolset_module
 
         calls = {"count": 0}
 
@@ -681,6 +678,7 @@ Instructions for skill two.
             assert output["success"] is False
             assert output["execution_ok"] is False
             assert output["execution_error"] == "sandbox unavailable"
+
 
 # Integration Tests
 # =============================================================================
