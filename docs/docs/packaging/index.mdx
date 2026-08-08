@@ -146,12 +146,12 @@ Once installed, the skills are available automatically:
 
 ```python
 from agent_skills import AgentSkillsToolset, SandboxExecutor
-from code_sandboxes.eval_sandbox import EvalSandbox
+from code_sandboxes import CodeSandboxClient
 from pydantic_ai import Agent
 
 # No need to reference my-skills-package anywhere — entrypoints do the work
 toolset = AgentSkillsToolset(
-    executor=SandboxExecutor(EvalSandbox()),
+    executor=SandboxExecutor(CodeSandboxClient.create(variant="eval")),
 )
 agent = Agent(model='openai:gpt-4o', toolsets=[toolset])
 ```
@@ -228,11 +228,11 @@ pip install datalayer_skills
 
 ```python
 from agent_skills import AgentSkillsToolset, SandboxExecutor
-from code_sandboxes.eval_sandbox import EvalSandbox
+from code_sandboxes import CodeSandboxClient
 
 # The "whoami" skill is now available automatically
 toolset = AgentSkillsToolset(
-    executor=SandboxExecutor(EvalSandbox()),
+    executor=SandboxExecutor(CodeSandboxClient.create(variant="eval")),
 )
 ```
 

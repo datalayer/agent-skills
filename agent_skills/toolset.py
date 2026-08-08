@@ -17,11 +17,11 @@ directories; every sub-directory containing a ``SKILL.md`` file is
 automatically discovered::
 
     from agent_skills import AgentSkillsToolset, SandboxExecutor
-    from code_sandboxes.eval_sandbox import EvalSandbox
+    from code_sandboxes import CodeSandboxClient
 
     toolset = AgentSkillsToolset(
         directories=["./skills"],           # scanned recursively for SKILL.md
-        executor=SandboxExecutor(EvalSandbox()),
+        executor=SandboxExecutor(CodeSandboxClient.create(variant="eval")),
     )
 
 This is the right pattern when skills are checked into the same repository
@@ -35,14 +35,14 @@ Skills live inside an installed Python package.  Use
 packages), then pass the results to the toolset via ``skills=``:
 
     from agent_skills import AgentSkill, AgentSkillsToolset, SandboxExecutor
-    from code_sandboxes.eval_sandbox import EvalSandbox
+    from code_sandboxes import CodeSandboxClient
 
     toolset = AgentSkillsToolset(
         skills=[
             AgentSkill.from_module("agent_skills.skills.crawl"),
             AgentSkill.from_module("agent_skills.skills.github"),
         ],
-        executor=SandboxExecutor(EvalSandbox()),
+        executor=SandboxExecutor(CodeSandboxClient.create(variant="eval")),
     )
 
 This is the right pattern when skills are distributed as part of an
@@ -58,7 +58,7 @@ The two approaches can be combined freely:
         skills=[
             AgentSkill.from_module("agent_skills.skills.crawl"),
         ],
-        executor=SandboxExecutor(EvalSandbox()),
+        executor=SandboxExecutor(CodeSandboxClient.create(variant="eval")),
     )
 """
 
@@ -71,7 +71,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Protocol, TypedDict, runtime_checkable
 
-from code_sandboxes import CodeSandboxClient, ExecutionResult
+from code_sandboxes import CodeSandboxClient
 
 if TYPE_CHECKING:
     from pydantic_ai._run_context import RunContext
@@ -239,16 +239,15 @@ def _outcome_to_script_result(outcome: Any) -> ScriptExecutionResult:
 class SandboxExecutor:
     """Execute skill scripts in an isolated code sandbox.
 
-    Uses code-sandboxes to execute skill scripts safely with proper
-    isolation. Any variant is supported (eval, monty, docker, jupyter,
-    colab, kaggle, modal, datalayer) as long as it exposes ``run_code``.
+    Uses ``CodeSandboxClient`` to execute skill scripts safely with proper
+    isolation. Any sandbox variant is supported.
 
     Example:
-        from code_sandboxes import Sandbox
+        from code_sandboxes import CodeSandboxClient
         from agent_skills import SandboxExecutor
 
-        with Sandbox.create(variant="eval") as sandbox:
-            executor = SandboxExecutor(sandbox)
+        with CodeSandboxClient.create(variant="eval") as client:
+            executor = SandboxExecutor(client)
             result = await executor.execute(
                 skill_name="pdf-extractor",
                 script_name="extract",
@@ -257,18 +256,8 @@ class SandboxExecutor:
             )
     """
 
-    sandbox: Any
+    client: CodeSandboxClient
     default_timeout: int = 30
-
-    def _get_effective_sandbox(self) -> Any:
-        """Return the sandbox to use for skill script execution.
-
-        Always returns the configured sandbox directly.  When skills are
-        invoked via the MCP proxy (codemode), the HTTP request arrives on
-        a separate thread so there is no kernel deadlock — the same
-        sandbox (including its environment variables) is safe to use.
-        """
-        return self.sandbox
 
     async def execute(
         self,
@@ -310,7 +299,12 @@ class SandboxExecutor:
         # Get identity environment variables from request context
         identity_env: dict[str, str] | None = None
         try:
-            from agent_runtimes.context.identities import get_identity_env
+            import sys
+
+            identities = sys.modules.get("agent_runtimes.context.identities")
+            if identities is None:
+                raise ImportError
+            get_identity_env = identities.get_identity_env
 
             identity_env = get_identity_env()
             if identity_env:
@@ -322,117 +316,13 @@ class SandboxExecutor:
             pass
 
         try:
-            # Select the effective sandbox (local fallback for Jupyter)
-            effective_sandbox = self._get_effective_sandbox()
-
-            # Preferred path: delegate execution + result normalization to the
-            # variant-agnostic code_sandboxes client. This reuses the SAME
-            # sandbox (the colocated Jupyter kernel in the K8s pod), so state
-            # persists and env vars injected into that kernel remain visible.
-            # Run via asyncio.to_thread to keep the sync run_code call off the
-            # event loop — identical threading to the legacy path below, which
-            # is what avoids a kernel deadlock when a skill is invoked through
-            # the MCP proxy (the HTTP request already runs on a worker thread).
-            if hasattr(effective_sandbox, "run_code"):
-                client = CodeSandboxClient(effective_sandbox)
-                if hasattr(client, "execute_code_streaming") and hasattr(
-                    effective_sandbox, "run_code_streaming"
-                ):
-
-                    def _execute_streaming() -> ScriptExecutionResult:
-                        stdout_lines: list[str] = []
-                        stderr_lines: list[str] = []
-                        result_texts: list[str] = []
-                        code_error: dict[str, str] | None = None
-
-                        for event in client.execute_code_streaming(
-                            execution_code, envs=identity_env
-                        ):
-                            if hasattr(event, "line"):
-                                line = getattr(event, "line", "") or ""
-                                if bool(getattr(event, "error", False)):
-                                    stderr_lines.append(line)
-                                else:
-                                    stdout_lines.append(line)
-                            elif hasattr(event, "data"):
-                                data = getattr(event, "data", {}) or {}
-                                text = data.get("text/plain")
-                                if text is not None:
-                                    result_texts.append(str(text))
-                            elif hasattr(event, "name") and hasattr(event, "value"):
-                                code_error = {
-                                    "name": getattr(event, "name", "Error"),
-                                    "value": getattr(event, "value", ""),
-                                    "traceback": getattr(event, "traceback", "") or "",
-                                }
-
-                        stdout = "\n".join(stdout_lines)
-                        stderr = "\n".join(stderr_lines)
-
-                        if code_error is not None:
-                            return ScriptExecutionResult(
-                                success=False,
-                                output=stderr or stdout,
-                                stdout=stdout,
-                                stderr=stderr,
-                                execution_ok=True,
-                                execution_error=None,
-                                code_error=code_error,
-                                exit_code=None,
-                                error=f"{code_error['name']}: {code_error['value']}",
-                            )
-
-                        output = stdout or "\n".join(result_texts)
-                        return ScriptExecutionResult(
-                            success=True,
-                            output=output,
-                            stdout=stdout,
-                            stderr=stderr,
-                            execution_ok=True,
-                            execution_error=None,
-                            code_error=None,
-                            exit_code=None,
-                            error=None,
-                        )
-
-                    return await asyncio.to_thread(_execute_streaming)
-
-                outcome = await asyncio.to_thread(
-                    client.execute_code, execution_code, envs=identity_env
-                )
-                return _outcome_to_script_result(outcome)
-            elif asyncio.iscoroutinefunction(getattr(effective_sandbox, "execute", None)):
-                result = await asyncio.wait_for(
-                    effective_sandbox.execute(execution_code),
-                    timeout=timeout,
-                )
-            else:
-                # Sync sandbox - run in executor
-                loop = asyncio.get_event_loop()
-                result = await asyncio.wait_for(
-                    loop.run_in_executor(None, effective_sandbox.execute, execution_code),
-                    timeout=timeout,
-                )
-
-            # Extract output for legacy sandbox APIs
-            if hasattr(result, "stdout"):
-                output = result.stdout or ""
-            elif hasattr(result, "result"):
-                output = str(result.result)
-            else:
-                output = str(result)
-
-            return ScriptExecutionResult(
-                success=True,
-                output=output,
-                stdout=output,
-                stderr="",
-                execution_ok=True,
-                execution_error=None,
-                code_error=None,
-                exit_code=None,
-                error=None,
+            outcome = await asyncio.to_thread(
+                self.client.execute_code,
+                execution_code,
+                timeout=timeout,
+                envs=identity_env,
             )
+            return _outcome_to_script_result(outcome)
 
         except asyncio.TimeoutError:
             return ScriptExecutionResult(
@@ -1545,12 +1435,12 @@ if PYDANTIC_AI_AVAILABLE:
         auto-discovered when the toolset is first used::
 
             from agent_skills import AgentSkillsToolset, SandboxExecutor
-            from code_sandboxes.eval_sandbox import EvalSandbox
+            from code_sandboxes import CodeSandboxClient
             from pydantic_ai import Agent
 
             toolset = AgentSkillsToolset(
                 directories=["./skills"],
-                executor=SandboxExecutor(EvalSandbox()),
+                executor=SandboxExecutor(CodeSandboxClient.create(variant="eval")),
             )
             agent = Agent(model='openai:gpt-4o', toolsets=[toolset])
 
@@ -1559,7 +1449,7 @@ if PYDANTIC_AI_AVAILABLE:
         via ``skills=``::
 
             from agent_skills import AgentSkill, AgentSkillsToolset, SandboxExecutor
-            from code_sandboxes.eval_sandbox import EvalSandbox
+            from code_sandboxes import CodeSandboxClient
             from pydantic_ai import Agent
 
             toolset = AgentSkillsToolset(
@@ -1567,7 +1457,7 @@ if PYDANTIC_AI_AVAILABLE:
                     AgentSkill.from_module("my_library.skills.parser"),
                     AgentSkill.from_module("my_library.skills.formatter"),
                 ],
-                executor=SandboxExecutor(EvalSandbox()),
+                executor=SandboxExecutor(CodeSandboxClient.create(variant="eval")),
             )
             agent = Agent(model='openai:gpt-4o', toolsets=[toolset])
 
@@ -1583,7 +1473,7 @@ if PYDANTIC_AI_AVAILABLE:
             # Then just create a toolset — entrypoint skills are found automatically:
             toolset = AgentSkillsToolset(
                 discover_entrypoints=True,
-                executor=SandboxExecutor(EvalSandbox()),
+                executor=SandboxExecutor(CodeSandboxClient.create(variant="eval")),
             )
         """
 

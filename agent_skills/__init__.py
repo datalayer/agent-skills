@@ -20,11 +20,11 @@ Use this when skills live in the same repository or are mounted at a known path:
 
     from pydantic_ai import Agent
     from agent_skills import AgentSkillsToolset, SandboxExecutor
-    from code_sandboxes.eval_sandbox import EvalSandbox
+    from code_sandboxes import CodeSandboxClient
 
     toolset = AgentSkillsToolset(
         directories=["./skills"],       # scanned recursively for SKILL.md
-        executor=SandboxExecutor(EvalSandbox()),
+        executor=SandboxExecutor(CodeSandboxClient.create(variant="eval")),
     )
 
     agent = Agent(model='openai:gpt-4o', toolsets=[toolset])
@@ -39,7 +39,7 @@ distributed as part of a pip-installable package:
 
     from pydantic_ai import Agent
     from agent_skills import AgentSkill, AgentSkillsToolset, SandboxExecutor
-    from code_sandboxes.eval_sandbox import EvalSandbox
+    from code_sandboxes import CodeSandboxClient
 
     toolset = AgentSkillsToolset(
         skills=[
@@ -47,7 +47,7 @@ distributed as part of a pip-installable package:
             AgentSkill.from_module("agent_skills.skills.github"),
             AgentSkill.from_module("agent_skills.skills.pdf"),
         ],
-        executor=SandboxExecutor(EvalSandbox()),
+        executor=SandboxExecutor(CodeSandboxClient.create(variant="eval")),
     )
 
     agent = Agent(model='openai:gpt-4o', toolsets=[toolset])
@@ -65,7 +65,7 @@ skills are distributed as standalone pip-installable packages:
     # Skills are found automatically:
     toolset = AgentSkillsToolset(
         discover_entrypoints=True,
-        executor=SandboxExecutor(EvalSandbox()),
+        executor=SandboxExecutor(CodeSandboxClient.create(variant="eval")),
     )
 
 By default, ``discover_entrypoints=False`` for deterministic startup.
@@ -81,7 +81,7 @@ The three approaches stack freely:
         ],
         # discover_entrypoints=True enables installed package discovery
         discover_entrypoints=True,
-        executor=SandboxExecutor(EvalSandbox()),
+        executor=SandboxExecutor(CodeSandboxClient.create(variant="eval")),
     )
 
 ## 2. Skills as Code Files (Primary Pattern)

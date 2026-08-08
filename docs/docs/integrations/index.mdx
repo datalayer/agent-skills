@@ -41,10 +41,10 @@ Skills are modular packages with instructions, resources, and scripts.
 ```python
 from pydantic_ai import Agent
 from agent_skills import AgentSkillsToolset, SandboxExecutor
-from code_sandboxes.eval_sandbox import EvalSandbox
+from code_sandboxes import CodeSandboxClient
 
 # Create sandbox for execution
-sandbox = EvalSandbox()
+sandbox = CodeSandboxClient.create(variant="eval")
 
 # Create toolset
 toolset = AgentSkillsToolset(
@@ -230,31 +230,32 @@ result = await agent.run("Analyze the sales data in /data/sales.csv")
 
 ## Execution Backends
 
-### EvalSandbox
+### Local eval client
 
 Execute skills locally using Python eval:
 
 ```python
-from code_sandboxes.eval_sandbox import EvalSandbox
+from code_sandboxes import CodeSandboxClient
 from agent_skills import SandboxExecutor
 
-sandbox = EvalSandbox()
-executor = SandboxExecutor(sandbox)
+client = CodeSandboxClient.create(variant="eval")
+executor = SandboxExecutor(client)
 ```
 
-### DatalayerRuntimeSandbox
+### Datalayer client
 
 Execute skills in cloud-based Datalayer Runtime:
 
 ```python
-from code_sandboxes import DatalayerRuntimeSandbox
+from code_sandboxes import CodeSandboxClient
 from agent_skills import SandboxExecutor
 
-sandbox = DatalayerRuntimeSandbox(
-    api_key="...",
-    runtime_id="...",
+client = CodeSandboxClient.create(
+    variant="datalayer",
+    token="...",
+    run_url="...",
 )
-executor = SandboxExecutor(sandbox)
+executor = SandboxExecutor(client)
 ```
 
 ### Custom Executor

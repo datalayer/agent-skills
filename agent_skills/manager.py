@@ -432,7 +432,7 @@ class SkillsManager:
         Returns:
             SkillExecution with results.
         """
-        from code_sandboxes import Sandbox
+        from code_sandboxes import CodeSandboxClient
 
         start_time = datetime.now()
         skill_id = skill.skill_id or skill.name
@@ -452,14 +452,14 @@ class SkillsManager:
             if skill.metadata.context == SkillContext.SANDBOX:
                 sandbox_variant = "datalayer"
 
-            with Sandbox.create(variant=sandbox_variant) as sandbox:
+            with CodeSandboxClient.create(variant=sandbox_variant) as client:
                 # Inject arguments
                 if arguments:
                     for name, value in arguments.items():
-                        sandbox.set_variable(name, value)
+                        client.set_variable(name, value)
 
                 # Execute the code
-                execution = sandbox.run_code(code, timeout=timeout)
+                outcome = client.execute_code(code, timeout=timeout)
 
                 execution_time = (datetime.now() - start_time).total_seconds()
 
@@ -478,13 +478,11 @@ class SkillsManager:
 
                 return SkillExecution(
                     skill_id=skill_id,
-                    success=execution.success,
-                    result=execution.results,
-                    error=str(execution.code_error)
-                    if execution.code_error
-                    else (execution.execution_error if not execution.execution_ok else None),
-                    execution_time=execution.duration if execution.duration else execution_time,
-                    logs=execution.stdout,
+                    success=outcome.success,
+                    result=outcome.results,
+                    error=outcome.error,
+                    execution_time=execution_time,
+                    logs=outcome.stdout,
                 )
 
         except Exception as e:
