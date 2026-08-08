@@ -7,7 +7,7 @@
 from pathlib import Path
 
 import pytest
-from code_sandboxes import CodeError, ExecutionResult, Logs, OutputMessage
+from code_sandboxes import CodeError, CodeSandboxClient, ExecutionResult, Logs, OutputMessage
 
 import agent_skills.toolset as toolset_module
 from agent_skills import (
@@ -202,8 +202,6 @@ def test_discover_entrypoint_skills_loads_from_entrypoints(monkeypatch: pytest.M
     """discover_entrypoint_skills should load skills from registered entrypoints."""
     from types import SimpleNamespace
 
-    from agent_skills import toolset as toolset_module
-
     loaded_modules: list[str] = []
 
     def fake_entry_points(*, group: str):
@@ -343,7 +341,6 @@ Instructions for skill two.
         monkeypatch: pytest.MonkeyPatch,
     ):
         """discover_entrypoints=False should skip entrypoint scanning."""
-        from agent_skills import toolset as toolset_module
 
         calls = {"count": 0}
 
@@ -626,7 +623,7 @@ Instructions for skill two.
                 logs=Logs(stdout=[OutputMessage(line="ok", timestamp=0.0, error=False)])
             )
             sandbox = self.DummySandbox(result)
-            executor = SandboxExecutor(sandbox)
+            executor = SandboxExecutor(CodeSandboxClient(sandbox))
 
             output = await executor.execute(
                 skill_name="test-skill",
@@ -646,7 +643,7 @@ Instructions for skill two.
             result = ExecutionResult(
                 code_error=CodeError(name="ValueError", value="bad", traceback=""),
             )
-            executor = SandboxExecutor(self.DummySandbox(result))
+            executor = SandboxExecutor(CodeSandboxClient(self.DummySandbox(result)))
 
             output = await executor.execute(
                 skill_name="test-skill",
@@ -669,7 +666,7 @@ Instructions for skill two.
                 execution_ok=False,
                 execution_error="sandbox unavailable",
             )
-            executor = SandboxExecutor(self.DummySandbox(result))
+            executor = SandboxExecutor(CodeSandboxClient(self.DummySandbox(result)))
 
             output = await executor.execute(
                 skill_name="test-skill",
@@ -681,86 +678,6 @@ Instructions for skill two.
             assert output["success"] is False
             assert output["execution_ok"] is False
             assert output["execution_error"] == "sandbox unavailable"
-
-        @pytest.mark.asyncio
-        async def test_executor_uses_streaming_client_path_when_available(
-            self, tmp_path: Path, monkeypatch
-        ):
-            script_path = tmp_path / "script.py"
-            script_path.write_text("print('hello')")
-
-            class _StreamingCapableSandbox(self.DummySandbox):
-                def run_code_streaming(self, code: str, envs=None, **kwargs):
-                    _ = (code, envs, kwargs)
-                    return iter(())
-
-            class _StreamingClient:
-                def __init__(self, sandbox):
-                    self._sandbox = sandbox
-
-                def execute_code_streaming(self, code: str, envs=None):
-                    _ = (code, envs)
-                    yield OutputMessage(line="progress", timestamp=0.0, error=False)
-                    yield OutputMessage(line="done", timestamp=0.0, error=False)
-
-            monkeypatch.setattr(toolset_module, "CodeSandboxClient", _StreamingClient)
-
-            result = ExecutionResult(logs=Logs())
-            sandbox = _StreamingCapableSandbox(result)
-            executor = SandboxExecutor(sandbox)
-
-            output = await executor.execute(
-                skill_name="test-skill",
-                script_name="run",
-                script_path=script_path,
-                args=[],
-            )
-
-            assert output["success"] is True
-            assert output["output"] == "progress\ndone"
-
-    class TestSandboxExecutorGetEffectiveSandbox:
-        """Tests for SandboxExecutor._get_effective_sandbox.
-
-        After fallback removal, _get_effective_sandbox always returns
-        the configured sandbox directly.
-        """
-
-        class DummyLocalSandbox:
-            """Simulates a eval sandbox (has ``_namespaces``)."""
-
-            _namespaces: dict = {}
-
-            def __init__(self, result: ExecutionResult):
-                self.result = result
-                self.called = False
-
-            def run_code(self, code: str, envs=None) -> ExecutionResult:
-                self.called = True
-                return self.result
-
-        class DummyRemoteSandbox:
-            """Simulates a Jupyter sandbox (no ``_namespaces``)."""
-
-            def __init__(self):
-                self.called = False
-
-            def run_code(self, code: str, envs=None) -> ExecutionResult:
-                self.called = True
-                return ExecutionResult(logs=Logs())
-
-        def test_effective_sandbox_local(self):
-            """Local-eval sandbox is returned directly."""
-            result = ExecutionResult(logs=Logs())
-            sandbox = self.DummyLocalSandbox(result)
-            executor = SandboxExecutor(sandbox)
-            assert executor._get_effective_sandbox() is sandbox
-
-        def test_effective_sandbox_remote(self):
-            """Remote sandbox is returned directly (no fallback)."""
-            sandbox = self.DummyRemoteSandbox()
-            executor = SandboxExecutor(sandbox)
-            assert executor._get_effective_sandbox() is sandbox
 
 
 # Integration Tests

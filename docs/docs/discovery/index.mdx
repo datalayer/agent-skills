@@ -20,11 +20,11 @@ well-known path at runtime (e.g. a Kubernetes shared volume).
 
 ```python
 from agent_skills import AgentSkillsToolset, SandboxExecutor
-from code_sandboxes.eval_sandbox import EvalSandbox
+from code_sandboxes import CodeSandboxClient
 
 toolset = AgentSkillsToolset(
     directories=["./skills"],           # scanned recursively for SKILL.md
-    executor=SandboxExecutor(EvalSandbox()),
+    executor=SandboxExecutor(CodeSandboxClient.create(variant="eval")),
 )
 ```
 
@@ -54,7 +54,7 @@ such as the built-in skills in `agent-skills` itself.
 
 ```python
 from agent_skills import AgentSkill, AgentSkillsToolset, SandboxExecutor
-from code_sandboxes.eval_sandbox import EvalSandbox
+from code_sandboxes import CodeSandboxClient
 
 toolset = AgentSkillsToolset(
     skills=[
@@ -63,7 +63,7 @@ toolset = AgentSkillsToolset(
         AgentSkill.from_module("agent_skills.skills.pdf"),
         AgentSkill.from_module("agent_skills.skills.events"),
     ],
-    executor=SandboxExecutor(EvalSandbox()),
+    executor=SandboxExecutor(CodeSandboxClient.create(variant="eval")),
 )
 ```
 
@@ -83,11 +83,11 @@ for sharing skills across teams or publishing them on PyPI.
 
 ```python
 from agent_skills import AgentSkillsToolset, SandboxExecutor
-from code_sandboxes.eval_sandbox import EvalSandbox
+from code_sandboxes import CodeSandboxClient
 
 # Entrypoint skills are found automatically — no skills= or directories= needed
 toolset = AgentSkillsToolset(
-    executor=SandboxExecutor(EvalSandbox()),
+    executor=SandboxExecutor(CodeSandboxClient.create(variant="eval")),
 )
 ```
 
@@ -108,7 +108,7 @@ To disable entrypoint scanning (e.g. for testing), set
 ```python
 toolset = AgentSkillsToolset(
     discover_entrypoints=False,
-    executor=SandboxExecutor(EvalSandbox()),
+    executor=SandboxExecutor(CodeSandboxClient.create(variant="eval")),
 )
 ```
 
@@ -133,7 +133,7 @@ toolset = AgentSkillsToolset(
         AgentSkill.from_module("agent_skills.skills.crawl"),
     ],
     # discover_entrypoints=True (default) — finds installed packages too
-    executor=SandboxExecutor(EvalSandbox()),
+    executor=SandboxExecutor(CodeSandboxClient.create(variant="eval")),
 )
 ```
 
