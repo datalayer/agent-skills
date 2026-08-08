@@ -67,6 +67,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Protocol, TypedDict, runtime_checkable
@@ -296,24 +297,26 @@ class SandboxExecutor:
             args=args,
         )
 
-        # Get identity environment variables from request context
+        # Get identity environment variables from request context.
+        #
+        # agent_runtimes is deliberately NOT imported here: it depends on
+        # agent_skills, not the other way round, so importing it would invert
+        # the dependency. We only look the module up in sys.modules. That is
+        # not a lossy shortcut: the identities live in a module-level
+        # ContextVar that only agent_runtimes itself can populate, so if the
+        # module was never imported no identity can have been set and there is
+        # nothing to inject.
         identity_env: dict[str, str] | None = None
-        try:
-            import sys
-
-            identities = sys.modules.get("agent_runtimes.context.identities")
-            if identities is None:
-                raise ImportError
-            get_identity_env = identities.get_identity_env
-
-            identity_env = get_identity_env()
-            if identity_env:
-                logger.debug(
-                    f"SandboxExecutor: Using identity env vars: {list(identity_env.keys())}"
-                )
-        except Exception:
-            # agent_runtimes not installed, skip identity context
-            pass
+        identities = sys.modules.get("agent_runtimes.context.identities")
+        if identities is not None:
+            try:
+                identity_env = identities.get_identity_env()
+                if identity_env:
+                    logger.debug(
+                        f"SandboxExecutor: Using identity env vars: {list(identity_env.keys())}"
+                    )
+            except Exception:
+                logger.debug("SandboxExecutor: could not read identity env context", exc_info=True)
 
         try:
             outcome = await asyncio.to_thread(

@@ -13,6 +13,7 @@ Handles:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -432,7 +433,7 @@ class SkillsManager:
         Returns:
             SkillExecution with results.
         """
-        from code_sandboxes import CodeSandboxClient
+        from code_sandboxes import CodeExecutionOutcome, CodeSandboxClient
 
         start_time = datetime.now()
         skill_id = skill.skill_id or skill.name
@@ -452,38 +453,44 @@ class SkillsManager:
             if skill.metadata.context == SkillContext.SANDBOX:
                 sandbox_variant = "datalayer"
 
-            with CodeSandboxClient.create(variant=sandbox_variant) as client:
-                # Inject arguments
-                if arguments:
-                    for name, value in arguments.items():
-                        client.set_variable(name, value)
+            # CodeSandboxClient is a synchronous API: creating the sandbox and
+            # running the code both block (network for remote variants), so run
+            # the whole session off the event loop.
+            def run_in_sandbox() -> CodeExecutionOutcome:
+                with CodeSandboxClient.create(variant=sandbox_variant) as client:
+                    # Inject arguments
+                    if arguments:
+                        for name, value in arguments.items():
+                            client.set_variable(name, value)
 
-                # Execute the code
-                outcome = client.execute_code(code, timeout=timeout)
+                    # Execute the code
+                    return client.execute_code(code, timeout=timeout)
 
-                execution_time = (datetime.now() - start_time).total_seconds()
+            outcome = await asyncio.to_thread(run_in_sandbox)
 
-                # Run after hook if defined
-                if skill.metadata.hooks and skill.metadata.hooks.after_invoke:
-                    try:
-                        import subprocess
+            execution_time = (datetime.now() - start_time).total_seconds()
 
-                        subprocess.run(
-                            skill.metadata.hooks.after_invoke,
-                            shell=True,
-                            check=True,
-                        )
-                    except Exception as e:
-                        logger.warning(f"After-invoke hook failed: {e}")
+            # Run after hook if defined
+            if skill.metadata.hooks and skill.metadata.hooks.after_invoke:
+                try:
+                    import subprocess
 
-                return SkillExecution(
-                    skill_id=skill_id,
-                    success=outcome.success,
-                    result=outcome.results,
-                    error=outcome.error,
-                    execution_time=execution_time,
-                    logs=outcome.stdout,
-                )
+                    subprocess.run(
+                        skill.metadata.hooks.after_invoke,
+                        shell=True,
+                        check=True,
+                    )
+                except Exception as e:
+                    logger.warning(f"After-invoke hook failed: {e}")
+
+            return SkillExecution(
+                skill_id=skill_id,
+                success=outcome.success,
+                result=outcome.results,
+                error=outcome.error,
+                execution_time=execution_time,
+                logs=outcome.stdout,
+            )
 
         except Exception as e:
             execution_time = (datetime.now() - start_time).total_seconds()
