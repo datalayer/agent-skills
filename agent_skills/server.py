@@ -19,14 +19,14 @@ Based on:
 import logging
 from typing import Any, Optional
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server import MCPServer
 
 from .manager import SkillsManager
 
 logger = logging.getLogger(__name__)
 
 # Create the MCP server
-mcp = FastMCP("Agent Skills 🎯")
+mcp = MCPServer("Agent Skills 🎯")
 
 # Global skill manager
 _manager: Optional[SkillsManager] = None
