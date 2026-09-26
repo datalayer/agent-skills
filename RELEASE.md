@@ -14,7 +14,8 @@ hatch reads too.
 ## Steps
 
 1. Bump `__version__` on a branch and open a pull request.
-2. Merge, then tag the merge commit and push the tag:
+
+1. Merge, then tag the merge commit and push the tag:
 
    ```bash
    git checkout main && git pull
@@ -22,7 +23,7 @@ hatch reads too.
    git push origin vX.Y.Z
    ```
 
-3. The `Release` workflow checks that the tag names the version, builds the
+1. The `Release` workflow checks that the tag names the version, builds the
    wheel and the sdist, publishes them unless PyPI already has that version,
    and creates a GitHub release with generated notes.
 
