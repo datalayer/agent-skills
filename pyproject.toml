@@ -22,7 +22,9 @@ classifiers = [
 ]
 dependencies = [
     "code-sandboxes",
-    "mcp[cli]>=1.10.1,<2",
+    # The MCP Python SDK 2: FastMCP became MCPServer. See the migration guide at
+    # https://py.sdk.modelcontextprotocol.io/v2/migration/
+    "mcp[cli]>=2,<3",
     "pydantic>=2.0",
     "pydantic-ai-slim>=2.21.0,<3",
     "pydantic-graph>=2.21.0,<3",

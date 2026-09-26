@@ -11,8 +11,8 @@ on:
       - 'setup.py'
       - 'requirements*.txt'
       - '**/*.py'
-      - '.github/workflows/py-tests.yml'
-      - '.github/workflows/reusable-python.yml'
+      - '.github/workflows/py-tests.yaml'
+      - '.github/workflows/reusable-python.yaml'
   pull_request:
     branches:
       - main
@@ -23,8 +23,8 @@ on:
       - 'setup.py'
       - 'requirements*.txt'
       - '**/*.py'
-      - '.github/workflows/py-tests.yml'
-      - '.github/workflows/reusable-python.yml'
+      - '.github/workflows/py-tests.yaml'
+      - '.github/workflows/reusable-python.yaml'
 
   workflow_dispatch:
 
@@ -34,7 +34,7 @@ jobs:
       max-parallel: 1
       matrix:
         python-version: ['3.10', '3.11', '3.12', '3.13']
-    uses: ./.github/workflows/reusable-python.yml
+    uses: ./.github/workflows/reusable-python.yaml
     with:
       python-version: ${{ matrix.python-version }}
       install-extras: test

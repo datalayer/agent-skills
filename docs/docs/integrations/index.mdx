@@ -333,7 +333,7 @@ Use skills alongside other toolsets:
 
 ```python
 from pydantic_ai import Agent
-from pydantic_ai_slim.pydantic_ai.mcp import MCPServerStdio
+from pydantic_ai.mcp import FastMCPClient, MCPToolset, StdioTransport
 from agent_skills import AgentSkillsToolset
 
 # Skills toolset
@@ -343,9 +343,13 @@ skills_toolset = AgentSkillsToolset(
 )
 
 # Direct MCP server access
-filesystem_server = MCPServerStdio(
-    "npx",
-    args=["-y", "@anthropic/mcp-server-filesystem", "/tmp"],
+filesystem_server = MCPToolset(
+    FastMCPClient(
+        StdioTransport(
+            "npx",
+            args=["-y", "@anthropic/mcp-server-filesystem", "/tmp"],
+        )
+    )
 )
 
 # Agent has both

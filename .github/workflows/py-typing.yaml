@@ -12,8 +12,8 @@ on:
       - 'setup.py'
       - 'mypy.ini'
       - '.mypy.ini'
-      - '.github/workflows/py-typing.yml'
-      - '.github/workflows/reusable-python.yml'
+      - '.github/workflows/py-typing.yaml'
+      - '.github/workflows/reusable-python.yaml'
   pull_request:
     branches:
       - main
@@ -25,8 +25,8 @@ on:
       - 'setup.py'
       - 'mypy.ini'
       - '.mypy.ini'
-      - '.github/workflows/py-typing.yml'
-      - '.github/workflows/reusable-python.yml'
+      - '.github/workflows/py-typing.yaml'
+      - '.github/workflows/reusable-python.yaml'
   workflow_dispatch:
 
 concurrency:
@@ -35,7 +35,7 @@ concurrency:
 
 jobs:
   type-check:
-    uses: ./.github/workflows/reusable-python.yml
+    uses: ./.github/workflows/reusable-python.yaml
     with:
       python-version: '3.12'
       install-extras: typing
