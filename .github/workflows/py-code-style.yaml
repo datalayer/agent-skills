@@ -13,8 +13,8 @@ on:
       - '.pre-commit-config.yaml'
       - 'ruff.toml'
       - '.ruff.toml'
-      - '.github/workflows/py-code-style.yml'
-      - '.github/workflows/reusable-python.yml'
+      - '.github/workflows/py-code-style.yaml'
+      - '.github/workflows/reusable-python.yaml'
   pull_request:
     branches:
       - main
@@ -27,8 +27,8 @@ on:
       - '.pre-commit-config.yaml'
       - 'ruff.toml'
       - '.ruff.toml'
-      - '.github/workflows/py-code-style.yml'
-      - '.github/workflows/reusable-python.yml'
+      - '.github/workflows/py-code-style.yaml'
+      - '.github/workflows/reusable-python.yaml'
   workflow_dispatch:
 
 concurrency:
@@ -37,7 +37,7 @@ concurrency:
 
 jobs:
   check-code-style:
-    uses: ./.github/workflows/reusable-python.yml
+    uses: ./.github/workflows/reusable-python.yaml
     with:
       python-version: '3.11'
       extra-packages: pre-commit

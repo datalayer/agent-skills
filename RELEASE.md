@@ -1,58 +1,34 @@
 <!--
-  ~ Copyright (c) 2023-2024 Datalayer, Inc.
+  ~ Copyright (c) 2023-2026 Datalayer, Inc.
   ~
   ~ BSD 3-Clause License
 -->
 
-# Making a new release of jupyter_mcp_server
+# Making a release
 
-The extension can be published to `PyPI` manually or using the [Jupyter Releaser](https://github.com/jupyter-server/jupyter_releaser).
+A tag releases `agent-skills` to PyPI, with no stored token: PyPI trusts
+`.github/workflows/release.yaml` through OIDC (trusted publishing, GitHub
+environment `pypi`). The version lives in `agent_skills/__version__.py`, which
+hatch reads too.
 
-## Manual release
+## Steps
 
-### Python package
+1. Bump `__version__` on a branch and open a pull request.
+2. Merge, then tag the merge commit and push the tag:
 
-This repository can be distributed as Python
-package. All of the Python
-packaging instructions in the `pyproject.toml` file to wrap your extension in a
-Python package. Before generating a package, we first need to install `build`.
+   ```bash
+   git checkout main && git pull
+   git tag vX.Y.Z
+   git push origin vX.Y.Z
+   ```
 
-```bash
-pip install build twine
-```
+3. The `Release` workflow checks that the tag names the version, builds the
+   wheel and the sdist, publishes them unless PyPI already has that version,
+   and creates a GitHub release with generated notes.
 
-To create a Python source package (`.tar.gz`) and the binary package (`.whl`) in the `dist/` directory, do:
+## Trusted publishing
 
-```bash
-python -m build
-```
-
-Then to upload the package to PyPI, do:
-
-```bash
-twine upload dist/*
-```
-
-## Automated releases with the Jupyter Releaser
-
-> [!NOTE]
-> The extension repository is compatible with the Jupyter Releaser. But
-> the GitHub repository and PyPI may need to be properly set up. Please
-> follow the instructions of the Jupyter Releaser [checklist](https://jupyter-releaser.readthedocs.io/en/latest/how_to_guides/convert_repo_from_repo.html).
-
-Here is a summary of the steps to cut a new release:
-
-- Go to the Actions panel
-- Run the "Step 1: Prep Release" workflow
-- Check the draft changelog
-- Run the "Step 2: Publish Release" workflow
-
-> [!NOTE]
-> Check out the [workflow documentation](https://jupyter-releaser.readthedocs.io/en/latest/get_started/making_release_from_repo.html)
-> for more information.
-
-## Publishing to `conda-forge`
-
-If the package is not on conda forge yet, check the documentation to learn how to add it: https://conda-forge.org/docs/maintainer/adding_pkgs.html
-
-Otherwise a bot should pick up the new version publish to PyPI, and open a new PR on the feedstock repository automatically.
+PyPI project `agent-skills`: owner `datalayer`, repository `agent-skills`, workflow
+`release.yaml`, environment `pypi`. The registry matches the repository,
+the workflow filename and the environment exactly; renaming any of them
+means re-registering.

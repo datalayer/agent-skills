@@ -13,7 +13,7 @@ jobs:
     strategy:
       matrix:
         python-version: ['3.11', '3.12']
-    uses: ./.github/workflows/reusable-python.yml
+    uses: ./.github/workflows/reusable-python.yaml
     with:
       python-version: ${{ matrix.python-version }}
       install-extras: test,typing
