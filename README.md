@@ -103,6 +103,8 @@ toolset = AgentSkillsToolset(
         AgentSkill.from_module("agent_skills.skills.crawl"),
         AgentSkill.from_module("agent_skills.skills.github"),
         AgentSkill.from_module("agent_skills.skills.pdf"),
+        AgentSkill.from_module("agent_skills.skills.image"),
+        AgentSkill.from_module("agent_skills.skills.video"),
         AgentSkill.from_module("agent_skills.skills.events"),
     ],
     executor=SandboxExecutor(CodeSandboxClient.create(variant="eval")),
