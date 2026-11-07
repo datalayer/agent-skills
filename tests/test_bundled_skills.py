@@ -62,3 +62,25 @@ def test_the_skill_md_names_every_script() -> None:
         ).read_text()
         for script in scripts:
             assert f"`script_name: {script}`" in text, (name, script)
+
+
+#: The skills whose SKILL.md says they are public (`metadata.visibility: public`) and that need no
+#: secret: what a company built on Datalayer may publish to personal agents (PAP 0.3 §9.4). The
+#: `github` and `events` skills need a token: never public.
+PUBLIC = {"accounting", "crawl", "image", "jokes", "pdf", "text_summarizer", "video"}
+
+
+@pytest.mark.parametrize("name", sorted(PUBLIC | {"github", "events"}))
+def test_a_public_skill_says_so_and_needs_no_secret(name: str) -> None:
+    import re
+
+    from agent_skills.types import Skill
+
+    text = (Path(__file__).parents[1] / "agent_skills" / "skills" / name / "SKILL.md").read_text()
+    skill = Skill.from_skill_md(text)
+    section = re.search(
+        r"^## Required Environment Variables\s*$(.*?)(?=^## |\Z)", text, re.M | re.S
+    )
+    needs_a_secret = bool(section and re.search(r"`[A-Z][A-Z0-9_]+`", section.group(1)))
+    assert (skill.metadata.metadata.get("visibility") == "public") == (name in PUBLIC)
+    assert needs_a_secret == (name not in PUBLIC), name

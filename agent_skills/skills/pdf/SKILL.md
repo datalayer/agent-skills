@@ -2,6 +2,8 @@
 name: pdf
 description: PDF form-processing toolkit for checking fillable forms, extracting form field metadata, validating bounding boxes, converting pages to images, and filling forms.
 license: Proprietary. LICENSE.txt has complete terms
+metadata:
+  visibility: public
 ---
 
 # PDF Skill

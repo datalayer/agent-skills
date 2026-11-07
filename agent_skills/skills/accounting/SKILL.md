@@ -9,6 +9,8 @@ tags:
   - reconciliation
   - close
 author: Datalayer
+metadata:
+  visibility: public
 ---
 
 # Accounting Skill

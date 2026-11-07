@@ -11,6 +11,7 @@ author: Datalayer
 compatibility: Requires Python 3.10+
 allowed-tools: Read
 metadata:
+  visibility: public
   category: nlp
 ---
 

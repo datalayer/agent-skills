@@ -291,15 +291,15 @@ class Skill(BaseModel):
                     current_dict[key.strip()] = value.strip()
                 continue
 
-            # Save previous list/dict
-            if in_list and current_key:
-                result[current_key] = current_list
-                current_list = []
-                in_list = False
-            if in_dict and current_key:
-                result[current_key] = current_dict
-                current_dict = {}
-                in_dict = False
+            # Save previous list/dict: whichever gathered items (a list followed by another key
+            # was overwritten by an empty dict); nothing gathered, the field keeps its default.
+            if (in_list or in_dict) and current_key:
+                if current_list:
+                    result[current_key] = current_list
+                elif current_dict:
+                    result[current_key] = current_dict
+                current_list, current_dict = [], {}
+                in_list = in_dict = False
 
             # Parse key: value
             if ":" in stripped:

@@ -8,6 +8,8 @@ tags:
   - humor
   - demo
 author: Datalayer
+metadata:
+  visibility: public
 ---
 
 # Jokes Skill
