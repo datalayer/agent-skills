@@ -9,6 +9,8 @@ tags:
   - screenshot
   - optimize
 author: Datalayer
+metadata:
+  visibility: public
 ---
 
 # Image Skill

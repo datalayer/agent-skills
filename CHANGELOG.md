@@ -6,6 +6,12 @@
 
 # Changelog
 
+## 1.3.0
+
+7 November 2026.
+
+- **Public skills.** A skill whose `SKILL.md` frontmatter says `metadata.visibility: public` and that needs no secret may be published by a company built on Datalayer to people's personal agents, as its `skill_index` (Personal Agent Protocol 0.3 §9.4). `accounting`, `crawl`, `image`, `jokes`, `pdf`, `text_summarizer` and `video` say so; `github` and `events` need a token and do not.
+
 ## 1.2.1
 
 7 November 2026.

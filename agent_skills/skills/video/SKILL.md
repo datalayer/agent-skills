@@ -9,6 +9,8 @@ tags:
   - ffmpeg
   - optimize
 author: Datalayer
+metadata:
+  visibility: public
 ---
 
 # Video Skill
