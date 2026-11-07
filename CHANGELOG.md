@@ -6,6 +6,12 @@
 
 # Changelog
 
+## 1.2.1
+
+7 November 2026.
+
+- **Accounting and Jokes skills.** The two skills the catalogue named without code: `accounting` — a reconciliation of two ledgers, the variance between two periods, the aging of open invoices and an audit-ready close summary of a trial balance, over CSV exports, with pandas (extra `skills-accounting`, in `skills`); `jokes` — one joke on request, by topic or at random, from a small bundled list. Both load from their modules like the others.
+
 ## 1.2.0
 
 7 November 2026.

@@ -14,6 +14,8 @@ import pytest
 from agent_skills.toolset import AgentSkill
 
 BUNDLED = {
+    "accounting": ["reconcile", "variance", "aging", "close_summary"],
+    "jokes": ["tell_joke"],
     "image": [
         "image_info",
         "resize_image",
