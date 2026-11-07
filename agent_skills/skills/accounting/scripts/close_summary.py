@@ -66,7 +66,7 @@ def summary(frame):
         "balances": abs(debit_total - credit_total) < 0.01,
         "by_type": by_type,
         "net_result": net,
-        "accounts": int(len(frame)),
+        "accounts": len(frame),
         "equation": {
             "assets": by_type["asset"],
             "liabilities_and_equity": round(by_type["liability"] + by_type["equity"] + net, 2),
