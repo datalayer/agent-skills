@@ -8,7 +8,24 @@ import sys
 import pandas as pd
 
 # The movement of each account between two periods: each account's previous and current
-# totals, the variance and its percentage, the largest movement first.
+# totals, the variance and its percentage, the largest movement first. An amount that is
+# not a number is an input error, never a zero: a zero would read as a drop.
+
+
+def money(frame, column, path):
+    raw = frame[column]
+    text = raw.astype(str).str.strip()
+    parsed = pd.to_numeric(raw, errors="coerce")
+    bad = parsed.isna() & raw.notna() & (text != "")
+    if bad.any():
+        lines = [int(i) + 2 for i in frame.index[bad][:5]]
+        print(
+            f"Error: {path} has {int(bad.sum())} value(s) in {column!r} that are not numbers"
+            f" (CSV lines {lines}): {list(text[bad][:3])}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    return parsed.fillna(0.0)
 
 
 def totals(path, account, amount):
@@ -24,8 +41,8 @@ def totals(path, account, amount):
                 file=sys.stderr,
             )
             sys.exit(1)
-    frame[amount] = pd.to_numeric(frame[amount], errors="coerce").fillna(0.0)
-    return frame.groupby(frame[account].astype(str).str.strip())[amount].sum()
+    frame[amount] = money(frame, amount, path)
+    return frame.groupby(frame[account].fillna("").astype(str).str.strip())[amount].sum()
 
 
 def variance(previous, current, threshold):

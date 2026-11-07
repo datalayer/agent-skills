@@ -9,8 +9,26 @@ from datetime import date, datetime
 import pandas as pd
 
 # How old the open invoices are: each one's age in days and its bucket, then the total per
-# bucket and per customer. An invoice is open when its `paid` column is false, or its
-# `balance` is not zero; every invoice is open when the file says neither.
+# bucket and per customer. The open amount is the `balance` when the file has one, else the
+# `amount` of the invoices whose `paid` is false, else every invoice's amount. An amount, a
+# balance or a due date that cannot be read is an input error, never a zero or a dropped
+# line: the report would understate what is owed.
+
+
+def money(frame, column, path):
+    raw = frame[column]
+    text = raw.astype(str).str.strip()
+    parsed = pd.to_numeric(raw, errors="coerce")
+    bad = parsed.isna() & raw.notna() & (text != "")
+    if bad.any():
+        lines = [int(i) + 2 for i in frame.index[bad][:5]]
+        print(
+            f"Error: {path} has {int(bad.sum())} value(s) in {column!r} that are not numbers"
+            f" (CSV lines {lines}): {list(text[bad][:3])}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    return parsed.fillna(0.0)
 
 
 def read(path, date_column):
@@ -27,16 +45,26 @@ def read(path, date_column):
             file=sys.stderr,
         )
         sys.exit(1)
-    frame["_due"] = pd.to_datetime(frame[date_column], errors="coerce")
-    frame["amount"] = pd.to_numeric(frame["amount"], errors="coerce").fillna(0.0)
-    if "paid" in frame.columns:
+    frame["amount"] = money(frame, "amount", path)
+    if "balance" in frame.columns:
+        # What is still owed, whatever `paid` says: an invoice part paid is open for the rest.
+        balance = money(frame, "balance", path)
+        frame = frame.assign(amount=balance)[balance != 0]
+    elif "paid" in frame.columns:
         paid = frame["paid"].astype(str).str.strip().str.lower().isin(["true", "1", "yes", "y"])
         frame = frame[~paid]
-    elif "balance" in frame.columns:
-        balance = pd.to_numeric(frame["balance"], errors="coerce").fillna(0.0)
-        frame = frame[balance != 0]
-        frame = frame.assign(amount=balance[balance != 0])
-    return frame[frame["_due"].notna()].reset_index(drop=True)
+    frame = frame.copy()
+    frame["_due"] = pd.to_datetime(frame[date_column], errors="coerce")
+    unreadable = frame["_due"].isna()
+    if unreadable.any():
+        lines = [int(i) + 2 for i in frame.index[unreadable][:5]]
+        print(
+            f"Error: {path} has {int(unreadable.sum())} open invoice(s) whose {date_column!r}"
+            f" is missing or not a date (CSV lines {lines})",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    return frame.reset_index(drop=True)
 
 
 def bucket_of(days, edges):
@@ -48,14 +76,19 @@ def bucket_of(days, edges):
     return f"{edges[-1] + 1}+"
 
 
+def cell(line, key):
+    value = line.get(key, "")
+    return "" if pd.isna(value) else str(value)
+
+
 def aging(frame, as_of, edges):
     rows = []
     for _, line in frame.iterrows():
         days = (as_of - line["_due"].date()).days
         rows.append(
             {
-                "invoice": str(line.get("invoice", "")),
-                "customer": str(line.get("customer", "")),
+                "invoice": cell(line, "invoice"),
+                "customer": cell(line, "customer"),
                 "due": line["_due"].date().isoformat(),
                 "amount": round(float(line["amount"]), 2),
                 "days": days,
@@ -98,7 +131,8 @@ def table(result):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="The aging of the open invoices.")
     parser.add_argument("invoices")
-    parser.add_argument("--as_of", default=None, help="YYYY-MM-DD; today when unsaid")
+    # `run_skill_script` writes a kwarg `as_of` as `--as-of`; both spellings are read.
+    parser.add_argument("--as-of", "--as_of", dest="as_of", default=None, help="YYYY-MM-DD")
     parser.add_argument("--date", default="due_date")
     parser.add_argument("--buckets", default="30,60,90")
     parser.add_argument("--format", choices=["table", "json"], default="table")
@@ -110,7 +144,7 @@ if __name__ == "__main__":
         edges = sorted(int(edge) for edge in options.buckets.split(",") if edge.strip())
     except ValueError:
         print(
-            "Error: --as_of is YYYY-MM-DD and --buckets a comma-separated list of days",
+            "Error: --as-of is YYYY-MM-DD and --buckets a comma-separated list of days",
             file=sys.stderr,
         )
         sys.exit(2)

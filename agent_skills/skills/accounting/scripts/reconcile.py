@@ -8,8 +8,26 @@ import sys
 import pandas as pd
 
 # Matches the lines of two ledgers — a bank statement against the books — on the amount
-# and, when both sides carry one, the reference; prints the pairs, then what stands alone
-# on each side, with the totals.
+# and the reference: two lines that both carry a reference match only when it is the same;
+# a line without one matches on the amount alone. Prints the pairs, then what stands alone
+# on each side, with the totals. An amount that is not a number is an input error, never
+# a zero: a zero would reconcile against a genuine zero.
+
+
+def money(frame, column, path):
+    raw = frame[column]
+    text = raw.astype(str).str.strip()
+    parsed = pd.to_numeric(raw, errors="coerce")
+    bad = parsed.isna() & raw.notna() & (text != "")
+    if bad.any():
+        lines = [int(i) + 2 for i in frame.index[bad][:5]]
+        print(
+            f"Error: {path} has {int(bad.sum())} value(s) in {column!r} that are not numbers"
+            f" (CSV lines {lines}): {list(text[bad][:3])}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    return parsed.fillna(0.0)
 
 
 def read(path, amount, reference):
@@ -24,11 +42,18 @@ def read(path, amount, reference):
             file=sys.stderr,
         )
         sys.exit(1)
-    frame[amount] = pd.to_numeric(frame[amount], errors="coerce").fillna(0.0)
+    frame[amount] = money(frame, amount, path)
     if reference not in frame.columns:
         reference = "description" if "description" in frame.columns else None
-    frame["_ref"] = frame[reference].astype(str).str.strip().str.lower() if reference else ""
+    frame["_ref"] = (
+        frame[reference].fillna("").astype(str).str.strip().str.lower() if reference else ""
+    )
     return frame.reset_index(drop=True)
+
+
+def record(line):
+    """A line as JSON reads it: a missing cell is null, never NaN."""
+    return {key: (None if pd.isna(value) else value) for key, value in line.items()}
 
 
 def reconcile(left, right, amount, tolerance):
@@ -37,8 +62,9 @@ def reconcile(left, right, amount, tolerance):
         candidates = right[~right.index.isin(used_right)]
         close = candidates[(candidates[amount] - line[amount]).abs() <= tolerance]
         if line["_ref"]:
-            same = close[close["_ref"] == line["_ref"]]
-            close = same if not same.empty else close
+            # The same reference, or none on the other side: two different
+            # references never reconcile, whatever the amount.
+            close = close[(close["_ref"] == line["_ref"]) | (close["_ref"] == "")]
         if close.empty:
             continue
         j = close.index[0]
@@ -46,8 +72,8 @@ def reconcile(left, right, amount, tolerance):
         used_right.add(j)
         matched.append(
             {
-                "left": line.drop("_ref").to_dict(),
-                "right": right.loc[j].drop("_ref").to_dict(),
+                "left": record(line.drop("_ref")),
+                "right": record(right.loc[j].drop("_ref")),
                 "difference": round(float(right.loc[j][amount] - line[amount]), 2),
             }
         )
@@ -55,8 +81,8 @@ def reconcile(left, right, amount, tolerance):
     only_right = right[~right.index.isin(used_right)].drop(columns="_ref")
     return {
         "matched": matched,
-        "only_left": only_left.to_dict(orient="records"),
-        "only_right": only_right.to_dict(orient="records"),
+        "only_left": [record(line) for _, line in only_left.iterrows()],
+        "only_right": [record(line) for _, line in only_right.iterrows()],
         "totals": {
             "left": round(float(left[amount].sum()), 2),
             "right": round(float(right[amount].sum()), 2),

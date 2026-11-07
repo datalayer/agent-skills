@@ -8,10 +8,28 @@ import sys
 import pandas as pd
 
 # Whether a trial balance balances, and what it says: the totals by type — assets,
-# liabilities, equity, revenue, expenses — and the net result. Exits with code 3 when
-# debits and credits differ by more than a cent, so the person is told first.
+# liabilities, equity, revenue, expenses — and the net result. A debit, a credit or an
+# amount that is not a number is an input error, never a zero: a zeroed balance would
+# certify as balanced what nobody read. Exits with code 3 when debits and credits differ
+# by more than a cent, so the person is told first.
 
 TYPES = ("asset", "liability", "equity", "revenue", "expense")
+
+
+def money(frame, column, path):
+    raw = frame[column]
+    text = raw.astype(str).str.strip()
+    parsed = pd.to_numeric(raw, errors="coerce")
+    bad = parsed.isna() & raw.notna() & (text != "")
+    if bad.any():
+        lines = [int(i) + 2 for i in frame.index[bad][:5]]
+        print(
+            f"Error: {path} has {int(bad.sum())} value(s) in {column!r} that are not numbers"
+            f" (CSV lines {lines}): {list(text[bad][:3])}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    return parsed.fillna(0.0)
 
 
 def read(path):
@@ -28,16 +46,16 @@ def read(path):
         )
         sys.exit(1)
     if "debit" in frame.columns and "credit" in frame.columns:
-        frame["debit"] = pd.to_numeric(frame["debit"], errors="coerce").fillna(0.0)
-        frame["credit"] = pd.to_numeric(frame["credit"], errors="coerce").fillna(0.0)
+        frame["debit"] = money(frame, "debit", path)
+        frame["credit"] = money(frame, "credit", path)
     elif "amount" in frame.columns:
-        amount = pd.to_numeric(frame["amount"], errors="coerce").fillna(0.0)
+        amount = money(frame, "amount", path)
         frame["debit"] = amount.clip(lower=0.0)
         frame["credit"] = (-amount).clip(lower=0.0)
     else:
         print(f"Error: {path} needs debit and credit columns, or a signed amount", file=sys.stderr)
         sys.exit(1)
-    frame["type"] = frame["type"].astype(str).str.strip().str.lower()
+    frame["type"] = frame["type"].fillna("").astype(str).str.strip().str.lower()
     unknown = sorted(set(frame["type"]) - set(TYPES))
     if unknown:
         print(f"Error: unknown account types {unknown}; one of {list(TYPES)}", file=sys.stderr)
@@ -48,6 +66,8 @@ def read(path):
 def summary(frame):
     debit_total = round(float(frame["debit"].sum()), 2)
     credit_total = round(float(frame["credit"].sum()), 2)
+    # The difference in cents, so that 1.00 against 0.99 and 10.00 against 9.99 read alike.
+    difference = round(debit_total - credit_total, 2)
     by_type = {}
     for kind in TYPES:
         part = frame[frame["type"] == kind]
@@ -62,8 +82,8 @@ def summary(frame):
     return {
         "debits": debit_total,
         "credits": credit_total,
-        "difference": round(debit_total - credit_total, 2),
-        "balances": abs(debit_total - credit_total) < 0.01,
+        "difference": difference,
+        "balances": abs(difference) <= 0.01,
         "by_type": by_type,
         "net_result": net,
         "accounts": len(frame),
