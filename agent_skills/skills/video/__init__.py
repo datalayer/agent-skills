@@ -2,4 +2,6 @@
 #
 # BSD 3-Clause License
 
-"""Video Skill — recordings of pages, and videos read, trimmed, transcoded, optimized, framed and turned to GIF."""
+"""Video Skill — recordings of pages, and videos read, trimmed, transcoded, optimized,
+framed and turned to GIF.
+"""

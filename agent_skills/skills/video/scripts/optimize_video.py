@@ -1,6 +1,7 @@
 # Copyright (c) 2025-2026 Datalayer, Inc.
 # Distributed under the terms of the Modified BSD License.
 
+import os
 import shutil
 import subprocess
 import sys
@@ -32,8 +33,6 @@ def run(arguments):
         sys.exit(completed.returncode)
     return completed
 
-
-import os
 
 # Optimizes a video for the web: H.264 at a constant quality, a slower preset for a smaller file, fast start; says the bytes before and after.
 
