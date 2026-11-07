@@ -46,8 +46,8 @@ def read(path):
 
 
 def summary(frame):
-    debits = round(float(frame["debit"].sum()), 2)
-    credits = round(float(frame["credit"].sum()), 2)
+    debit_total = round(float(frame["debit"].sum()), 2)
+    credit_total = round(float(frame["credit"].sum()), 2)
     by_type = {}
     for kind in TYPES:
         part = frame[frame["type"] == kind]
@@ -60,10 +60,10 @@ def summary(frame):
         by_type[kind] = round(float(signed.sum()), 2)
     net = round(by_type["revenue"] - by_type["expense"], 2)
     return {
-        "debits": debits,
-        "credits": credits,
-        "difference": round(debits - credits, 2),
-        "balances": abs(debits - credits) < 0.01,
+        "debits": debit_total,
+        "credits": credit_total,
+        "difference": round(debit_total - credit_total, 2),
+        "balances": abs(debit_total - credit_total) < 0.01,
         "by_type": by_type,
         "net_result": net,
         "accounts": int(len(frame)),
