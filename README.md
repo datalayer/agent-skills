@@ -91,7 +91,9 @@ Load skills that are packaged inside an installed Python library using
 packages (directories without `__init__.py`).
 
 Use this when skills are distributed as part of a pip-installable package
-(such as `agent-skills` itself):
+(such as [`datalayer-skills`](https://github.com/datalayer/skills), which ships
+`crawl`, `github`, `pdf`, `image`, `video` and others; `agent-skills` itself is
+the framework and carries one example skill, `jokes`):
 
 ```python
 from pydantic_ai import Agent
@@ -100,12 +102,10 @@ from code_sandboxes import CodeSandboxClient
 
 toolset = AgentSkillsToolset(
     skills=[
-        AgentSkill.from_module("agent_skills.skills.crawl"),
-        AgentSkill.from_module("agent_skills.skills.github"),
-        AgentSkill.from_module("agent_skills.skills.pdf"),
-        AgentSkill.from_module("agent_skills.skills.image"),
-        AgentSkill.from_module("agent_skills.skills.video"),
-        AgentSkill.from_module("agent_skills.skills.events"),
+        AgentSkill.from_module("agent_skills.skills.jokes"),
+        # pip install "datalayer-skills[skills]"
+        AgentSkill.from_module("datalayer_skills.skills.crawl"),
+        AgentSkill.from_module("datalayer_skills.skills.video"),
     ],
     executor=SandboxExecutor(CodeSandboxClient.create(variant="eval")),
 )
@@ -122,8 +122,7 @@ skills are merged into a single skill registry:
 toolset = AgentSkillsToolset(
     directories=["./skills"],           # local / custom skills
     skills=[
-        AgentSkill.from_module("agent_skills.skills.crawl"),
-        AgentSkill.from_module("agent_skills.skills.github"),
+        AgentSkill.from_module("agent_skills.skills.jokes"),
     ],
     executor=SandboxExecutor(CodeSandboxClient.create(variant="eval")),
 )

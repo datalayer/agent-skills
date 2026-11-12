@@ -13,30 +13,13 @@ import pytest
 
 from agent_skills.toolset import AgentSkill
 
+#: The framework's own example skill. The catalogue's skills (accounting, crawl, events, github,
+#: image, pdf, text-summarizer, video) live in datalayer-skills since 1.4.0.
 BUNDLED = {
-    "accounting": ["reconcile", "variance", "aging", "close_summary"],
     "jokes": ["tell_joke"],
-    "image": [
-        "image_info",
-        "resize_image",
-        "crop_image",
-        "convert_image",
-        "optimize_image",
-        "thumbnail_image",
-        "snapshot_page",
-        "snapshot_video_frame",
-    ],
-    "video": [
-        "video_info",
-        "record_page",
-        "trim_video",
-        "transcode_video",
-        "optimize_video",
-        "video_thumbnail",
-        "video_to_gif",
-        "concat_videos",
-    ],
 }
+
+MOVED = ["accounting", "crawl", "events", "github", "image", "pdf", "text_summarizer", "video"]
 
 
 @pytest.mark.parametrize("name", sorted(BUNDLED))
@@ -64,23 +47,33 @@ def test_the_skill_md_names_every_script() -> None:
             assert f"`script_name: {script}`" in text, (name, script)
 
 
-#: The skills whose SKILL.md says they are public (`metadata.visibility: public`) and that need no
-#: secret: what a company built on Datalayer may publish to personal agents (PAP 0.3 §9.4). The
-#: `github` and `events` skills need a token: never public.
-PUBLIC = {"accounting", "crawl", "image", "jokes", "pdf", "text_summarizer", "video"}
+@pytest.mark.parametrize("name", MOVED)
+def test_a_moved_skill_is_gone_with_no_alias(name: str) -> None:
+    import importlib
+
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module(f"agent_skills.skills.{name}")
 
 
-@pytest.mark.parametrize("name", sorted(PUBLIC | {"github", "events"}))
-def test_a_public_skill_says_so_and_needs_no_secret(name: str) -> None:
+def test_the_bundled_skill_is_public_and_needs_no_secret() -> None:
+    """`metadata.visibility: public` and no secret: what a company may publish to people's
+    personal agents."""
     import re
 
     from agent_skills.types import Skill
 
-    text = (Path(__file__).parents[1] / "agent_skills" / "skills" / name / "SKILL.md").read_text()
+    text = (
+        Path(__file__).parents[1] / "agent_skills" / "skills" / "jokes" / "SKILL.md"
+    ).read_text()
     skill = Skill.from_skill_md(text)
     section = re.search(
         r"^## Required Environment Variables\s*$(.*?)(?=^## |\Z)", text, re.M | re.S
     )
-    needs_a_secret = bool(section and re.search(r"`[A-Z][A-Z0-9_]+`", section.group(1)))
-    assert (skill.metadata.metadata.get("visibility") == "public") == (name in PUBLIC)
-    assert needs_a_secret == (name not in PUBLIC), name
+    assert skill.metadata.metadata.get("visibility") == "public"
+    assert not (section and re.search(r"`[A-Z][A-Z0-9_]+`", section.group(1)))
+
+
+def test_no_extra_names_a_moved_skill() -> None:
+    pyproject = (Path(__file__).parents[1] / "pyproject.toml").read_text()
+    assert "skills-" not in pyproject
+    assert "agent_skills[" not in pyproject
