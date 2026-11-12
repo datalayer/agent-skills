@@ -50,7 +50,7 @@ installed Python library.  Works for both regular packages (with
 `__init__.py`, where `__file__` is `None`).
 
 **When to use:** skills distributed as part of a pip-installable package,
-such as the built-in skills in `agent-skills` itself.
+such as [`datalayer-skills`](https://github.com/datalayer/skills) (`crawl`, `github`, `pdf`, `image`, `video`…), or the `jokes` example in `agent-skills` itself.
 
 ```python
 from agent_skills import AgentSkill, AgentSkillsToolset, SandboxExecutor
@@ -58,10 +58,10 @@ from code_sandboxes import CodeSandboxClient
 
 toolset = AgentSkillsToolset(
     skills=[
-        AgentSkill.from_module("agent_skills.skills.crawl"),
-        AgentSkill.from_module("agent_skills.skills.github"),
-        AgentSkill.from_module("agent_skills.skills.pdf"),
-        AgentSkill.from_module("agent_skills.skills.events"),
+        AgentSkill.from_module("agent_skills.skills.jokes"),
+        # pip install "datalayer-skills[skills]"
+        AgentSkill.from_module("datalayer_skills.skills.crawl"),
+        AgentSkill.from_module("datalayer_skills.skills.pdf"),
     ],
     executor=SandboxExecutor(CodeSandboxClient.create(variant="eval")),
 )
@@ -130,7 +130,7 @@ with any skills discovered from `directories=` and from entrypoints:
 toolset = AgentSkillsToolset(
     directories=["./skills"],           # local / custom skills
     skills=[
-        AgentSkill.from_module("agent_skills.skills.crawl"),
+        AgentSkill.from_module("agent_skills.skills.jokes"),
     ],
     # discover_entrypoints=True (default) — finds installed packages too
     executor=SandboxExecutor(CodeSandboxClient.create(variant="eval")),

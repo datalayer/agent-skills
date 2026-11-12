@@ -39,14 +39,15 @@ packages), then pass the results to the toolset via ``skills=``:
 
     toolset = AgentSkillsToolset(
         skills=[
-            AgentSkill.from_module("agent_skills.skills.crawl"),
-            AgentSkill.from_module("agent_skills.skills.github"),
+            AgentSkill.from_module("agent_skills.skills.jokes"),
+            # From another installed package, e.g. datalayer-skills:
+            AgentSkill.from_module("datalayer_skills.skills.crawl"),
         ],
         executor=SandboxExecutor(CodeSandboxClient.create(variant="eval")),
     )
 
 This is the right pattern when skills are distributed as part of an
-installed package (e.g. ``agent-skills``) and consumers should not need
+installed package (e.g. ``datalayer-skills``) and consumers should not need
 an on-disk copy of the skill directory.
 
 ## Both patterns together
@@ -56,7 +57,7 @@ The two approaches can be combined freely:
     toolset = AgentSkillsToolset(
         directories=["./skills"],            # local overrides / custom skills
         skills=[
-            AgentSkill.from_module("agent_skills.skills.crawl"),
+            AgentSkill.from_module("agent_skills.skills.jokes"),
         ],
         executor=SandboxExecutor(CodeSandboxClient.create(variant="eval")),
     )
@@ -1105,7 +1106,7 @@ class AgentSkill:
         the module (inside the same directory as ``__init__.py``).
 
         Args:
-            package: Dotted Python package path (e.g. ``agent_skills.skills.text_summarizer``).
+            package: Dotted Python package path (e.g. ``datalayer_skills.skills.text_summarizer``).
             method: Name of the callable in the package.
             name: Skill name override (defaults to SKILL.md frontmatter, then method name).
             description: Skill description override (defaults to SKILL.md frontmatter, then docstring).
@@ -1227,7 +1228,7 @@ class AgentSkill:
 
         Example::
 
-            skill = AgentSkill.from_module("agent_skills.skills.crawl")
+            skill = AgentSkill.from_module("agent_skills.skills.jokes")
 
         Args:
             module_name: Dotted Python module path.

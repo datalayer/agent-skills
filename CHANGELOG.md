@@ -6,6 +6,12 @@
 
 # Changelog
 
+## 1.4.0
+
+12 November 2026.
+
+- **The framework alone.** `accounting`, `crawl`, `events`, `github`, `image`, `pdf`, `text_summarizer` and `video` leave this package for [`datalayer-skills`](https://github.com/datalayer/skills) 0.3.0, where they are `datalayer_skills.skills.<name>` under the same skill names, found through its `agent_skills.skills` entry points. **Breaking:** `agent_skills.skills.<name>` no longer imports for those eight, with no alias left behind, and the extras `skills`, `skills-crawl`, `skills-github`, `skills-pdf`, `skills-accounting`, `skills-image` and `skills-video` are gone: install `datalayer-skills[skills]` (or `datalayer-skills[skills-<name>]`) and name `datalayer_skills.skills.<name>`. `jokes` stays, as the example of a module-based skill.
+
 ## 1.3.0
 
 7 November 2026.

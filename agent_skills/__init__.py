@@ -43,9 +43,9 @@ distributed as part of a pip-installable package:
 
     toolset = AgentSkillsToolset(
         skills=[
-            AgentSkill.from_module("agent_skills.skills.crawl"),
-            AgentSkill.from_module("agent_skills.skills.github"),
-            AgentSkill.from_module("agent_skills.skills.pdf"),
+            AgentSkill.from_module("agent_skills.skills.jokes"),
+            # From another installed package, e.g. datalayer-skills:
+            AgentSkill.from_module("datalayer_skills.skills.crawl"),
         ],
         executor=SandboxExecutor(CodeSandboxClient.create(variant="eval")),
     )
@@ -77,7 +77,7 @@ The three approaches stack freely:
     toolset = AgentSkillsToolset(
         directories=["./skills"],           # local / custom skills
         skills=[
-            AgentSkill.from_module("agent_skills.skills.crawl"),
+            AgentSkill.from_module("agent_skills.skills.jokes"),
         ],
         # discover_entrypoints=True enables installed package discovery
         discover_entrypoints=True,
