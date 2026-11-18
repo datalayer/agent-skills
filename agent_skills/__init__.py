@@ -168,7 +168,9 @@ from .toolset import (
     SandboxExecutor,
     ScriptExecutionResult,
     SkillScriptExecutorProtocol,
+    activation_env,
     discover_entrypoint_skills,
+    parse_skill_env,
 )
 from .types import (
     Skill,
@@ -208,6 +210,7 @@ __all__ = [
     "SkillVersion",
     # Manager
     "SkillsManager",
+    "activation_env",
     "configure_server",
     # Entrypoint Discovery
     "discover_entrypoint_skills",
@@ -215,6 +218,7 @@ __all__ = [
     "generate_skill_file",
     "generate_skill_from_template",
     "parallel",
+    "parse_skill_env",
     "retry",
     "run_with_timeout",
     "setup_skills_directory",
