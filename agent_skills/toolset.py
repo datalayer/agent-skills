@@ -721,8 +721,10 @@ class AgentSkill:
     compatibility: str | None = None
     metadata: dict[str, str] = field(default_factory=dict)
     #: The frontmatter's ``env`` block (see :func:`parse_skill_env`): ``required``,
-    #: ``optional`` and ``any_of``, each a list of variable names.
-    env: dict[str, list[str]] = field(default_factory=dict)
+    #: ``optional`` and ``any_of``, each a list of variable names. None when the
+    #: skill has no ``env`` block, and its SKILL.md sections are read instead; an
+    #: empty block (``env: {}``) is a declaration that nothing is needed.
+    env: dict[str, list[str]] | None = None
 
     @staticmethod
     def _normalize_key(value: str) -> str:
@@ -771,7 +773,7 @@ class AgentSkill:
         block; else the ``Required Environment Variables`` section of its
         SKILL.md; else, for older skills, what its scripts' descriptions name.
         """
-        if self.env:
+        if self.env is not None:
             return sorted(set(self.env.get("required", [])))
 
         env_vars = self._section_env_vars("Required Environment Variables")
@@ -779,6 +781,9 @@ class AgentSkill:
             return sorted(set(env_vars))
 
         # Fallback for older skills: parse env vars from script descriptions.
+        # A script names every variable it reads; one the SKILL.md says is
+        # optional is not required for that.
+        said_optional = set(self._section_env_vars("Optional Environment Variables"))
         for script in self.scripts:
             if not script.description:
                 continue
@@ -787,14 +792,19 @@ class AgentSkill:
                 continue
             for item in env_match.group(1).split(","):
                 token = item.strip()
-                if token and token.replace("_", "").isalnum() and token.upper() == token:
+                if (
+                    token
+                    and token.replace("_", "").isalnum()
+                    and token.upper() == token
+                    and token not in said_optional
+                ):
                     env_vars.append(token)
 
         return sorted(set(env_vars))
 
     def get_any_of_env_vars(self) -> list[str]:
         """Return the variables of which one at least must be set (``env.any_of``)."""
-        return sorted(set(self.env.get("any_of", [])))
+        return sorted(set((self.env or {}).get("any_of", [])))
 
     def get_optional_env_vars(self) -> list[str]:
         """Return the variables the skill reads when they are set and works without.
@@ -802,7 +812,7 @@ class AgentSkill:
         The frontmatter's ``env.optional`` and ``env.any_of``; without an
         ``env`` block, the ``Optional Environment Variables`` section.
         """
-        if self.env:
+        if self.env is not None:
             names = set(self.env.get("optional", [])) | set(self.env.get("any_of", []))
         else:
             names = set(self._section_env_vars("Optional Environment Variables"))
@@ -854,7 +864,7 @@ class AgentSkill:
             invocation_hint = " ".join(invocation_bullets[:2])
 
         summary = [f"scripts={scripts}", f"required_env={env_text}"]
-        if self.env and self.get_optional_env_vars():
+        if self.get_optional_env_vars():
             # Which of its optional variables are set says what it can do now.
             set_now = self.get_set_env_vars(env)
             summary.append(f"optional_env_set={', '.join(set_now) if set_now else 'none'}")
@@ -1141,7 +1151,13 @@ class AgentSkill:
         license_name = metadata.get("license")
         compatibility = metadata.get("compatibility")
         metadata_map = metadata.get("metadata", {})
-        env_block = parse_skill_env(metadata.get("env"))
+        # An `env` key, even empty, is the skill's declaration; none leaves the sections to read.
+        env_block = parse_skill_env(metadata.get("env")) if "env" in metadata else None
+        if metadata.get("env") is not None and not isinstance(metadata["env"], Mapping):
+            logger.warning(
+                f"{skill_md}: `env` is not a mapping of required/optional/any_of; "
+                "read as declaring no variable"
+            )
 
         allowed_tools = metadata.get("allowed-tools", [])
         if isinstance(allowed_tools, str):
@@ -1436,7 +1452,7 @@ class AgentSkill:
             lines.append(f"**Compatibility:** {self.compatibility}")
         if self.metadata:
             lines.append(f"**Metadata:** {self.metadata}")
-        if self.env and self.get_optional_env_vars():
+        if self.get_optional_env_vars():
             set_now = self.get_set_env_vars(env)
             unset = [name for name in self.get_optional_env_vars() if name not in set_now]
             lines.append(f"**Environment set now:** {', '.join(set_now) or 'none'}")
@@ -1664,6 +1680,15 @@ if PYDANTIC_AI_AVAILABLE:
 
         async def _ensure_initialized(self) -> None:
             """Discover skills from directories and entrypoints if not already done."""
+            self._discover()
+
+        def _discover(self) -> None:
+            """Discover skills from directories and entrypoints, once.
+
+            Everything that reads the skills goes through here first, so a
+            toolset answers for its directories and entry points from the
+            moment it is built.
+            """
             if self._initialized:
                 return
 
@@ -1705,6 +1730,7 @@ if PYDANTIC_AI_AVAILABLE:
             ``any_of`` variables is, is left out: the model is not told of it
             and cannot load or run it.
             """
+            self._discover()
             if not self.enforce_activation:
                 return dict(self._discovered_skills)
             env = self._activation_env()
@@ -1714,8 +1740,13 @@ if PYDANTIC_AI_AVAILABLE:
                 if skill.is_activated(env)
             }
 
+        def get_active_skills(self) -> dict[str, AgentSkill]:
+            """The skills offered now, by name: discovered, and with their environment."""
+            return self._active_skills()
+
         def get_inactive_skills(self) -> dict[str, str]:
             """The skills left out, each with why: variable names, never a value."""
+            self._discover()
             if not self.enforce_activation:
                 return {}
             env = self._activation_env()
@@ -1730,7 +1761,7 @@ if PYDANTIC_AI_AVAILABLE:
             await self._ensure_initialized()
 
             tools: dict[str, ToolsetTool] = {}
-            if self._discovered_skills and not self._active_skills():
+            if not self._active_skills() and self._discovered_skills:
                 # Skills were given and none is activated: no tool that could only fail.
                 return tools
 

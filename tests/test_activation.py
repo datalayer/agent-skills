@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+import agent_skills.toolset as toolset_module
 from agent_skills import (
     PYDANTIC_AI_AVAILABLE,
     AgentSkill,
@@ -306,3 +307,124 @@ def main() -> dict:
 '''
     )
     assert AgentSkill.from_skill_md(path).scripts[0].description == "List things."
+
+
+# ---- Review of the env block and activation --------------------------------------------------
+
+LEGACY_BOTH = (
+    "## Required Environment Variables\n\n- `LEGACY_TOKEN` (required)\n\n"
+    "## Optional Environment Variables\n\n- `LEGACY_LIMIT`: a limit.\n"
+)
+
+DOCUMENTED_SCRIPT = '''"""Run it.
+
+Environment:
+    LEGACY_LIMIT
+    SCRIPT_TOKEN
+"""
+
+print("ran")
+'''
+
+
+class TestReview:
+    def test_an_empty_env_block_declares_that_nothing_is_needed(self, tmp_path: Path):
+        """`env: {}` is a declaration: the legacy sections and scripts are not read."""
+        path = write_skill(tmp_path, "nothing", "env: {}\n", LEGACY_BOTH)
+        (path / "scripts" / "run.py").write_text(DOCUMENTED_SCRIPT)
+        skill = AgentSkill.from_skill_md(path)
+        assert skill.get_required_env_vars() == []
+        assert skill.get_optional_env_vars() == []
+        assert skill.is_activated({})
+
+    def test_an_env_block_left_blank_declares_nothing_too(self, tmp_path: Path):
+        skill = AgentSkill.from_skill_md(write_skill(tmp_path, "blank", "env:\n", SECTION))
+        assert skill.get_required_env_vars() == []
+        assert skill.is_activated({})
+
+    def test_a_programmatic_skill_may_declare_an_empty_env(self):
+        body = "## Required Environment Variables\n\n- `OLD_TOKEN`\n"
+        assert AgentSkill(name="a", description="a", content=body).get_required_env_vars() == [
+            "OLD_TOKEN"
+        ]
+        declared = AgentSkill(name="a", description="a", content=body, env={})
+        assert declared.get_required_env_vars() == []
+        assert declared.is_activated({})
+
+    def test_a_scripts_optional_variable_is_not_required(self, tmp_path: Path):
+        """A variable the SKILL.md says is optional is not required because a script names it."""
+        body = "## Optional Environment Variables\n\n- `LEGACY_LIMIT`: a limit.\n"
+        path = write_skill(tmp_path, "legacy", body=body)
+        (path / "scripts" / "run.py").write_text(DOCUMENTED_SCRIPT)
+        skill = AgentSkill.from_skill_md(path)
+        assert skill.get_required_env_vars() == ["SCRIPT_TOKEN"]
+        assert skill.get_optional_env_vars() == ["LEGACY_LIMIT"]
+        assert skill.is_activated({"SCRIPT_TOKEN": "t"})
+
+    def test_a_legacy_skill_says_which_optional_variables_are_set(self, tmp_path: Path):
+        skill = AgentSkill.from_skill_md(write_skill(tmp_path, "legacy", body=LEGACY_BOTH))
+        env = {"LEGACY_TOKEN": "t", "LEGACY_LIMIT": "the-value"}
+        assert "optional_env_set=LEGACY_LIMIT" in skill.get_discovery_summary(env)
+        assert "optional_env_set=none" in skill.get_discovery_summary({"LEGACY_TOKEN": "t"})
+        content = skill.get_full_content(env)
+        assert "**Environment set now:** LEGACY_LIMIT" in content
+        assert "**Environment not set:** LEGACY_LIMIT" in skill.get_full_content({})
+        assert "the-value" not in content + skill.get_skills_header(env)
+
+    def test_a_skill_with_no_optional_variable_says_nothing_of_them(self, tmp_path: Path):
+        skill = AgentSkill.from_skill_md(write_skill(tmp_path, "plain"))
+        assert "optional_env_set" not in skill.get_discovery_summary({})
+        assert "Environment set now" not in skill.get_full_content({})
+
+
+@pytest.mark.skipif(not PYDANTIC_AI_AVAILABLE, reason="pydantic-ai not installed")
+class TestReviewToolset:
+    @pytest.fixture
+    def directory(self, tmp_path: Path) -> Path:
+        write_skill(tmp_path, "plain")
+        write_skill(tmp_path, "photos", ANY_OF)
+        return tmp_path
+
+    def test_diagnostics_need_no_initializer(self, directory: Path):
+        """A freshly built toolset answers for its directories without a private call first."""
+        toolset = AgentSkillsToolset(directories=[directory], env={})
+        assert toolset.get_inactive_skills() == {
+            "photos": "none of FIRST_PHOTOS_KEY, SECOND_PHOTOS_KEY set"
+        }
+        assert sorted(AgentSkillsToolset(directories=[directory], env={}).get_active_skills()) == [
+            "plain"
+        ]
+
+    def test_diagnostics_discover_the_entry_points(self, directory: Path, monkeypatch):
+        hidden = AgentSkill.from_skill_md(directory / "photos")
+        monkeypatch.setattr(toolset_module, "discover_entrypoint_skills", lambda: [hidden])
+        toolset = AgentSkillsToolset(discover_entrypoints=True, env={})
+        assert list(toolset.get_inactive_skills()) == ["photos"]
+
+    @pytest.mark.asyncio
+    async def test_instructions_and_tools_need_no_initializer(self, directory: Path):
+        toolset = AgentSkillsToolset(directories=[directory], env={})
+        assert 'name="plain"' in await toolset.get_instructions()
+        only_hidden = AgentSkillsToolset(directories=[directory / "photos"], env={})
+        assert await only_hidden.get_instructions() == ""
+        assert await only_hidden.get_tools(Ctx()) == {}
+
+    def test_private_readers_need_no_initializer(self, directory: Path):
+        toolset = AgentSkillsToolset(directories=[directory], env={})
+        assert 'name="plain"' in toolset._list_skills()
+        assert "# Skill: plain" in AgentSkillsToolset(directories=[directory], env={})._load_skill(
+            "plain"
+        )
+
+    @pytest.mark.asyncio
+    async def test_discovery_runs_once(self, directory: Path, monkeypatch):
+        calls = []
+        real = AgentSkill.from_skill_md
+        monkeypatch.setattr(
+            AgentSkill, "from_skill_md", lambda path: (calls.append(path), real(path))[1]
+        )
+        toolset = AgentSkillsToolset(directories=[directory], env={})
+        toolset.get_inactive_skills()
+        await toolset._ensure_initialized()
+        toolset.get_active_skills()
+        assert len(calls) == 2
