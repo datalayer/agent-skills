@@ -960,6 +960,15 @@ class AgentSkill:
                 for env_match in re.finditer(r"^\s+(\w+)", env_section.group(1), re.MULTILINE):
                     schema["env_vars"].append(env_match.group(1))
 
+        # --- Extract argparse arguments (covers scripts without a main func) ---
+        argparse_params = AgentSkill._extract_argparse_args(tree)
+        # A script that builds an ArgumentParser is a command line, arguments or not.
+        is_command_line = bool(argparse_params) or any(
+            isinstance(node, ast.Call)
+            and getattr(node.func, "attr", getattr(node.func, "id", "")) == "ArgumentParser"
+            for node in ast.walk(tree)
+        )
+
         # --- Find the main public function ---
         # Heuristic: first top-level function that doesn't start with '_'
         # and isn't 'main' or a helper like 'get_*_headers'.
@@ -1011,7 +1020,7 @@ class AgentSkill:
                     schema["returns"] = returns_match.group(1).strip()
 
             # If no params from docstring, extract from function signature
-            if not schema["parameters"]:
+            if not schema["parameters"] and not is_command_line:
                 for arg in main_func.args.args:
                     if arg.arg in ("self", "cls"):
                         continue
@@ -1021,12 +1030,12 @@ class AgentSkill:
                     schema["parameters"].append(param)
 
             # Return type annotation
-            if main_func.returns and not schema["returns"]:
+            if main_func.returns and not schema["returns"] and not is_command_line:
                 schema["returns"] = ast.unparse(main_func.returns)
 
-        # --- Extract argparse arguments (covers scripts without a main func) ---
-        argparse_params = AgentSkill._extract_argparse_args(tree)
-        if argparse_params and not schema["parameters"]:
+        # A command line's parameters are its argparse arguments, whatever its
+        # first function takes: a helper's signature is not the script's.
+        if argparse_params:
             schema["parameters"] = argparse_params
 
         return schema

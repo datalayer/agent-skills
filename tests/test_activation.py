@@ -255,3 +255,54 @@ class TestToolsetActivation:
         assert "legacy" not in toolset._list_skills()
         monkeypatch.setitem(sys.modules, "agent_runtimes.context.identities", identities)
         assert 'name="legacy"' in toolset._list_skills()
+
+
+def test_a_command_line_is_described_by_its_arguments(tmp_path: Path):
+    """A script with helpers before its argparse is described by its arguments, not a helper."""
+    path = write_skill(tmp_path, "cli")
+    (path / "scripts" / "run.py").write_text(
+        '''"""Find things.
+
+Usage:
+    python run.py QUERY [--limit 5]
+"""
+
+import argparse
+
+
+def setting(name: str, default: str = "") -> str:
+    return default
+
+
+def main() -> dict:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("query", help="What to look for")
+    parser.add_argument("--limit", type=int, default=5, help="How many")
+    return vars(parser.parse_args())
+'''
+    )
+    description = AgentSkill.from_skill_md(path).scripts[0].description
+    assert description.startswith("Find things.")
+    assert "query — What to look for" in description
+    assert "limit: int — How many" in description
+    assert "default" not in description and "Returns" not in description
+
+
+def test_a_command_line_without_arguments_takes_none(tmp_path: Path):
+    path = write_skill(tmp_path, "cli")
+    (path / "scripts" / "run.py").write_text(
+        '''"""List things."""
+
+import argparse
+
+
+def setting(name: str, default: str = "") -> str:
+    return default
+
+
+def main() -> dict:
+    argparse.ArgumentParser(description="List things").parse_args()
+    return {}
+'''
+    )
+    assert AgentSkill.from_skill_md(path).scripts[0].description == "List things."
