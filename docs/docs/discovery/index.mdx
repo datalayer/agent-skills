@@ -181,6 +181,67 @@ the kernel over the Jupyter HTTP API.
 
 ---
 
+## The environment a skill needs, and when it is activated
+
+A skill says in its `SKILL.md` frontmatter which environment variables it
+reads, under `env`:
+
+```yaml
+---
+name: photos
+description: Finds photos on the photo services the person has a key for.
+env:
+  required:            # every one must be set
+    - PHOTOS_REGION
+  optional:            # read when set, never needed
+    - PHOTOS_TIMEOUT_SECONDS
+  any_of:              # one at least must be set
+    - FIRST_SERVICE_API_KEY
+    - SECOND_SERVICE_API_KEY
+---
+```
+
+- `required` (also written `all_of`): the skill cannot work without each of them.
+- `optional`: the skill reads them when they are set and works without them.
+- `any_of`: one of them is enough. Each is optional by itself, so it need not
+  be repeated under `optional`.
+
+A skill is **activated** when every `required` variable is set and, when it
+names some, one at least of `any_of`. A variable set to an empty or blank
+value is not set. A skill that declares nothing is always activated.
+
+A skill with no `env` block is read as before: its required variables are the
+ones its `## Required Environment Variables` section names in backticks, and
+its optional ones those of `## Optional Environment Variables`.
+
+`AgentSkillsToolset` keeps a skill that is not activated out: it is not in
+`list_skills` nor in the instructions, and `load_skill`, `read_skill_resource`
+and `run_skill_script` answer that it is not found, as for a skill that does
+not exist. When skills were given and none is activated, the toolset offers no
+tool at all. The environment is read at each call, so a variable set later
+activates its skill without building the toolset again.
+
+For an activated skill with optional variables, the listing and `load_skill`
+say which are set now (`optional_env_set=…`, **Environment set now**), by
+name and never by value, so the agent knows what the skill can do in this run.
+
+```python
+skill = AgentSkill.from_module("my_package.skills.photos")
+skill.get_required_env_vars()   # ["PHOTOS_REGION"]
+skill.get_optional_env_vars()   # ["FIRST_SERVICE_API_KEY", "PHOTOS_TIMEOUT_SECONDS", ...]
+skill.get_any_of_env_vars()     # ["FIRST_SERVICE_API_KEY", "SECOND_SERVICE_API_KEY"]
+skill.is_activated()            # on os.environ; or is_activated({"PHOTOS_REGION": "eu", ...})
+skill.get_inactive_reason()     # "none of FIRST_SERVICE_API_KEY, SECOND_SERVICE_API_KEY set"
+
+toolset = AgentSkillsToolset(skills=[skill])
+toolset.get_inactive_skills()   # {"photos": "PHOTOS_REGION not set; none of ... set"}
+```
+
+The toolset decides on the process's environment, with the variables the
+current request's identities stand for when a host provides some. Pass
+`env={...}` to decide on another mapping, or `enforce_activation=False` to
+offer every skill whatever is set.
+
 ## Runtime Discovery via the Agent
 
 When `AgentSkillsToolset` is attached to an agent, the agent can discover

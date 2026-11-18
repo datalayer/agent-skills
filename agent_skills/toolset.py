@@ -68,7 +68,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+import re
 import sys
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Protocol, TypedDict, runtime_checkable
@@ -298,26 +301,10 @@ class SandboxExecutor:
             args=args,
         )
 
-        # Get identity environment variables from request context.
-        #
-        # agent_runtimes is deliberately NOT imported here: it depends on
-        # agent_skills, not the other way round, so importing it would invert
-        # the dependency. We only look the module up in sys.modules. That is
-        # not a lossy shortcut: the identities live in a module-level
-        # ContextVar that only agent_runtimes itself can populate, so if the
-        # module was never imported no identity can have been set and there is
-        # nothing to inject.
-        identity_env: dict[str, str] | None = None
-        identities = sys.modules.get("agent_runtimes.context.identities")
-        if identities is not None:
-            try:
-                identity_env = identities.get_identity_env()
-                if identity_env:
-                    logger.debug(
-                        f"SandboxExecutor: Using identity env vars: {list(identity_env.keys())}"
-                    )
-            except Exception:
-                logger.debug("SandboxExecutor: could not read identity env context", exc_info=True)
+        # The request's identities, as the variables they stand for.
+        identity_env: dict[str, str] | None = request_identity_env() or None
+        if identity_env:
+            logger.debug(f"SandboxExecutor: Using identity env vars: {list(identity_env.keys())}")
 
         try:
             outcome = await asyncio.to_thread(
@@ -578,6 +565,85 @@ class CallableExecutor:
 # =============================================================================
 
 
+# =============================================================================
+# Environment a skill reads, and whether it is activated
+# =============================================================================
+
+_ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+#: The keys of a SKILL.md's ``env`` block, and the spellings accepted for each.
+_ENV_KEYS: dict[str, tuple[str, ...]] = {
+    "required": ("required", "all_of", "all-of"),
+    "optional": ("optional",),
+    "any_of": ("any_of", "any-of"),
+}
+
+
+def _env_names(value: Any) -> list[str]:
+    """The variable names a frontmatter value lists: a list, or one string of names."""
+    if value is None:
+        return []
+    items = re.split(r"[\s,]+", value) if isinstance(value, str) else list(value)
+    names: list[str] = []
+    for item in items:
+        name = str(item).strip()
+        if name and _ENV_NAME.match(name) and name not in names:
+            names.append(name)
+    return names
+
+
+def parse_skill_env(value: Any) -> dict[str, list[str]]:
+    """Read a SKILL.md frontmatter ``env`` block.
+
+    ::
+
+        env:
+          required: [SERVICE_URL]              # every one must be set
+          optional: [SERVICE_TIMEOUT]          # read when set
+          any_of: [FIRST_API_KEY, OTHER_KEY]   # one at least must be set
+
+    Returns the three lists, each present only when the block says it. A name
+    under ``any_of`` is optional by itself: it need not be repeated.
+    """
+    if not isinstance(value, Mapping):
+        return {}
+    declared: dict[str, list[str]] = {}
+    for key, spellings in _ENV_KEYS.items():
+        for spelling in spellings:
+            if spelling not in value:
+                continue
+            names = declared.setdefault(key, [])
+            names.extend(name for name in _env_names(value[spelling]) if name not in names)
+    return declared
+
+
+def _is_set(env: Mapping[str, str], name: str) -> bool:
+    return bool(str(env.get(name) or "").strip())
+
+
+def request_identity_env() -> dict[str, str]:
+    """The variables the current request's identities stand for, when a host set some.
+
+    agent_runtimes is deliberately not imported: it depends on agent_skills,
+    not the other way round. Its identities live in a ContextVar only it can
+    fill, so a module that was never imported has set none.
+    """
+    identities = sys.modules.get("agent_runtimes.context.identities")
+    if identities is None:
+        return {}
+    try:
+        return dict(identities.get_identity_env() or {})
+    except Exception:
+        logger.debug("could not read identity env context", exc_info=True)
+        return {}
+
+
+def activation_env() -> dict[str, str]:
+    """What a skill's activation is decided on: the process's environment and the
+    request's identities (a GitHub sign-in stands for ``GITHUB_TOKEN``)."""
+    return {**os.environ, **request_identity_env()}
+
+
 @dataclass
 class AgentSkillResource:
     """A resource file associated with a skill.
@@ -654,6 +720,9 @@ class AgentSkill:
     license: str | None = None
     compatibility: str | None = None
     metadata: dict[str, str] = field(default_factory=dict)
+    #: The frontmatter's ``env`` block (see :func:`parse_skill_env`): ``required``,
+    #: ``optional`` and ``any_of``, each a list of variable names.
+    env: dict[str, list[str]] = field(default_factory=dict)
 
     @staticmethod
     def _normalize_key(value: str) -> str:
@@ -686,16 +755,26 @@ class AgentSkill:
                 bullets.append(bullet)
         return bullets
 
-    def get_required_env_vars(self) -> list[str]:
-        """Return required environment variables discovered from SKILL.md."""
-        import re
-
+    def _section_env_vars(self, heading: str) -> list[str]:
+        """The variables a markdown section's bullets name in backticks."""
         env_vars: list[str] = []
-        for bullet in self._extract_markdown_bullets("Required Environment Variables"):
+        for bullet in self._extract_markdown_bullets(heading):
             match = re.search(r"`([A-Z][A-Z0-9_]*)`", bullet)
             if match:
                 env_vars.append(match.group(1))
+        return env_vars
 
+    def get_required_env_vars(self) -> list[str]:
+        """Return the environment variables the skill cannot work without.
+
+        The frontmatter's ``env.required`` when the skill declares an ``env``
+        block; else the ``Required Environment Variables`` section of its
+        SKILL.md; else, for older skills, what its scripts' descriptions name.
+        """
+        if self.env:
+            return sorted(set(self.env.get("required", [])))
+
+        env_vars = self._section_env_vars("Required Environment Variables")
         if env_vars:
             return sorted(set(env_vars))
 
@@ -713,7 +792,57 @@ class AgentSkill:
 
         return sorted(set(env_vars))
 
-    def get_discovery_summary(self) -> str:
+    def get_any_of_env_vars(self) -> list[str]:
+        """Return the variables of which one at least must be set (``env.any_of``)."""
+        return sorted(set(self.env.get("any_of", [])))
+
+    def get_optional_env_vars(self) -> list[str]:
+        """Return the variables the skill reads when they are set and works without.
+
+        The frontmatter's ``env.optional`` and ``env.any_of``; without an
+        ``env`` block, the ``Optional Environment Variables`` section.
+        """
+        if self.env:
+            names = set(self.env.get("optional", [])) | set(self.env.get("any_of", []))
+        else:
+            names = set(self._section_env_vars("Optional Environment Variables"))
+        return sorted(names - set(self.get_required_env_vars()))
+
+    def get_missing_env_vars(self, env: Mapping[str, str] | None = None) -> list[str]:
+        """Return the required variables ``env`` (the process's when unsaid) does not set."""
+        env = os.environ if env is None else env
+        return [name for name in self.get_required_env_vars() if not _is_set(env, name)]
+
+    def get_set_env_vars(self, env: Mapping[str, str] | None = None) -> list[str]:
+        """Return the optional variables ``env`` (the process's when unsaid) sets."""
+        env = os.environ if env is None else env
+        return [name for name in self.get_optional_env_vars() if _is_set(env, name)]
+
+    def is_activated(self, env: Mapping[str, str] | None = None) -> bool:
+        """Whether the skill has the environment it needs.
+
+        Every required variable is set, and one at least of ``env.any_of`` when
+        the skill names some. A skill that names neither is always activated.
+        """
+        env = os.environ if env is None else env
+        if self.get_missing_env_vars(env):
+            return False
+        any_of = self.get_any_of_env_vars()
+        return not any_of or any(_is_set(env, name) for name in any_of)
+
+    def get_inactive_reason(self, env: Mapping[str, str] | None = None) -> str | None:
+        """Why the skill is not activated, naming variables and never a value; None when it is."""
+        env = os.environ if env is None else env
+        reasons: list[str] = []
+        missing = self.get_missing_env_vars(env)
+        if missing:
+            reasons.append(f"{', '.join(missing)} not set")
+        any_of = self.get_any_of_env_vars()
+        if any_of and not any(_is_set(env, name) for name in any_of):
+            reasons.append(f"none of {', '.join(any_of)} set")
+        return "; ".join(reasons) or None
+
+    def get_discovery_summary(self, env: Mapping[str, str] | None = None) -> str:
         """Return compact SKILL.md-derived usage hints for discovery context."""
         scripts = ", ".join(script.name for script in self.scripts) or "none"
         env_vars = self.get_required_env_vars()
@@ -725,6 +854,10 @@ class AgentSkill:
             invocation_hint = " ".join(invocation_bullets[:2])
 
         summary = [f"scripts={scripts}", f"required_env={env_text}"]
+        if self.env and self.get_optional_env_vars():
+            # Which of its optional variables are set says what it can do now.
+            set_now = self.get_set_env_vars(env)
+            summary.append(f"optional_env_set={', '.join(set_now) if set_now else 'none'}")
         if invocation_hint:
             summary.append(f"contract={invocation_hint}")
         return " | ".join(summary)
@@ -999,6 +1132,7 @@ class AgentSkill:
         license_name = metadata.get("license")
         compatibility = metadata.get("compatibility")
         metadata_map = metadata.get("metadata", {})
+        env_block = parse_skill_env(metadata.get("env"))
 
         allowed_tools = metadata.get("allowed-tools", [])
         if isinstance(allowed_tools, str):
@@ -1083,6 +1217,7 @@ class AgentSkill:
             license=license_name,
             compatibility=compatibility,
             metadata=metadata_map or {},
+            env=env_block,
         )
 
     @classmethod
@@ -1254,7 +1389,7 @@ class AgentSkill:
             raise FileNotFoundError(f"No SKILL.md found for module '{module_name}' in {skill_dir}")
         return cls.from_skill_md(skill_md)
 
-    def get_skills_header(self) -> str:
+    def get_skills_header(self, env: Mapping[str, str] | None = None) -> str:
         """Get a brief header for system prompt injection.
 
         Used for progressive disclosure - only the header is shown initially.
@@ -1263,7 +1398,7 @@ class AgentSkill:
         safe_name = self.name.replace('"', "'")
         safe_description = self.description.replace('"', "'")
         safe_location = location.replace('"', "'")
-        safe_summary = self.get_discovery_summary().replace('"', "'")
+        safe_summary = self.get_discovery_summary(env).replace('"', "'")
         return (
             f'<skill name="{safe_name}" '
             f'description="{safe_description}" '
@@ -1271,7 +1406,7 @@ class AgentSkill:
             f'summary="{safe_summary}" />'
         )
 
-    def get_full_content(self) -> str:
+    def get_full_content(self, env: Mapping[str, str] | None = None) -> str:
         """Get full skill content for load_skill().
 
         Returns the complete SKILL.md content plus resource/script listings.
@@ -1292,6 +1427,12 @@ class AgentSkill:
             lines.append(f"**Compatibility:** {self.compatibility}")
         if self.metadata:
             lines.append(f"**Metadata:** {self.metadata}")
+        if self.env and self.get_optional_env_vars():
+            set_now = self.get_set_env_vars(env)
+            unset = [name for name in self.get_optional_env_vars() if name not in set_now]
+            lines.append(f"**Environment set now:** {', '.join(set_now) or 'none'}")
+            if unset:
+                lines.append(f"**Environment not set:** {', '.join(unset)}")
 
         if self.resources:
             lines.append("**Available Resources:**")
@@ -1486,6 +1627,12 @@ if PYDANTIC_AI_AVAILABLE:
         executor: SandboxExecutor | None = None
         script_timeout: int = 30
         discover_entrypoints: bool = False
+        #: Whether a skill without the environment it needs is kept out: not
+        #: listed, not loaded, not run. False offers every skill whatever is set.
+        enforce_activation: bool = True
+        #: The environment activation is decided on. When unsaid, the process's
+        #: and the request's identities, read at each call.
+        env: Mapping[str, str] | None = None
         _id: str | None = None
 
         # Internal state
@@ -1538,11 +1685,45 @@ if PYDANTIC_AI_AVAILABLE:
             self._initialized = True
             logger.info(f"Discovered {len(self._discovered_skills)} skills")
 
+        def _activation_env(self) -> Mapping[str, str]:
+            """The environment skills are activated on, read now."""
+            return self.env if self.env is not None else activation_env()
+
+        def _active_skills(self) -> dict[str, AgentSkill]:
+            """The skills that have the environment they need, by name.
+
+            A skill whose required variable is not set, or none of whose
+            ``any_of`` variables is, is left out: the model is not told of it
+            and cannot load or run it.
+            """
+            if not self.enforce_activation:
+                return dict(self._discovered_skills)
+            env = self._activation_env()
+            return {
+                name: skill
+                for name, skill in self._discovered_skills.items()
+                if skill.is_activated(env)
+            }
+
+        def get_inactive_skills(self) -> dict[str, str]:
+            """The skills left out, each with why: variable names, never a value."""
+            if not self.enforce_activation:
+                return {}
+            env = self._activation_env()
+            return {
+                name: skill.get_inactive_reason(env) or ""
+                for name, skill in self._discovered_skills.items()
+                if not skill.is_activated(env)
+            }
+
         async def get_tools(self, ctx: RunContext) -> dict[str, ToolsetTool]:
             """Get the tools provided by this toolset."""
             await self._ensure_initialized()
 
-            tools = {}
+            tools: dict[str, ToolsetTool] = {}
+            if self._discovered_skills and not self._active_skills():
+                # Skills were given and none is activated: no tool that could only fail.
+                return tools
 
             # list_skills tool
             tools["list_skills"] = ToolsetTool(
@@ -1683,12 +1864,14 @@ if PYDANTIC_AI_AVAILABLE:
 
         def _list_skills(self) -> str:
             """List all available skills."""
-            if not self._discovered_skills:
+            active = self._active_skills()
+            if not active:
                 return "No skills available."
 
+            env = self._activation_env()
             lines = ["Available skills:"]
-            for skill in self._discovered_skills.values():
-                lines.append(skill.get_skills_header())
+            for skill in active.values():
+                lines.append(skill.get_skills_header(env))
 
             return "\n".join(lines)
 
@@ -1697,21 +1880,24 @@ if PYDANTIC_AI_AVAILABLE:
             if not skill_name:
                 return None, "Skill name is required"
 
+            # A skill that is not activated is not found, like one that does not exist.
+            active = self._active_skills()
+
             # Exact match first.
-            skill = self._discovered_skills.get(skill_name)
+            skill = active.get(skill_name)
             if skill:
                 return skill, None
 
             normalized_requested = AgentSkill._normalize_key(skill_name)
             candidates = [
                 s
-                for s in self._discovered_skills.values()
+                for s in active.values()
                 if AgentSkill._normalize_key(s.name) == normalized_requested
             ]
             if len(candidates) == 1:
                 return candidates[0], None
 
-            available = ", ".join(sorted(self._discovered_skills.keys()))
+            available = ", ".join(sorted(active.keys()))
             return (
                 None,
                 f"Skill not found: {skill_name}. Available skills: {available}",
@@ -1752,7 +1938,7 @@ if PYDANTIC_AI_AVAILABLE:
             if not skill:
                 return error or f"Skill not found: {skill_name}"
 
-            return skill.get_full_content()
+            return skill.get_full_content(self._activation_env())
 
         async def _read_skill_resource(
             self,
@@ -1975,8 +2161,10 @@ if PYDANTIC_AI_AVAILABLE:
             This implements the get_instructions() method proposed in PR #3780
             for automatic system prompt integration.
             """
-            if not self._discovered_skills:
+            active = self._active_skills()
+            if not active:
                 return ""
+            env = self._activation_env()
 
             lines = [
                 "<skills>",
@@ -1986,8 +2174,8 @@ if PYDANTIC_AI_AVAILABLE:
                 "<available_skills>",
             ]
 
-            for skill in self._discovered_skills.values():
-                lines.append(skill.get_skills_header())
+            for skill in active.values():
+                lines.append(skill.get_skills_header(env))
 
             lines.extend(
                 [
@@ -1997,8 +2185,8 @@ if PYDANTIC_AI_AVAILABLE:
                 ]
             )
 
-            for skill in self._discovered_skills.values():
-                lines.append(f"- {skill.name}: {skill.get_discovery_summary()}")
+            for skill in active.values():
+                lines.append(f"- {skill.name}: {skill.get_discovery_summary(env)}")
 
             lines.extend(
                 [
