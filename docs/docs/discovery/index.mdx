@@ -212,7 +212,11 @@ value is not set. A skill that declares nothing is always activated.
 
 A skill with no `env` block is read as before: its required variables are the
 ones its `## Required Environment Variables` section names in backticks, and
-its optional ones those of `## Optional Environment Variables`.
+its optional ones those of `## Optional Environment Variables`. Without a
+required section, the variables its scripts' docstrings name are required,
+except those the optional section names. An `env` block, even an empty one
+(`env: {}`), is the whole declaration: the sections are then not read, so an
+empty block says the skill needs nothing.
 
 `AgentSkillsToolset` keeps a skill that is not activated out: it is not in
 `list_skills` nor in the instructions, and `load_skill`, `read_skill_resource`
@@ -235,12 +239,15 @@ skill.get_inactive_reason()     # "none of FIRST_SERVICE_API_KEY, SECOND_SERVICE
 
 toolset = AgentSkillsToolset(skills=[skill])
 toolset.get_inactive_skills()   # {"photos": "PHOTOS_REGION not set; none of ... set"}
+toolset.get_active_skills()     # {} until its environment is there
 ```
 
 The toolset decides on the process's environment, with the variables the
 current request's identities stand for when a host provides some. Pass
 `env={...}` to decide on another mapping, or `enforce_activation=False` to
-offer every skill whatever is set.
+offer every skill whatever is set. `get_active_skills()` and
+`get_inactive_skills()` discover the toolset's directories and entry points
+themselves: they answer from the moment the toolset is built.
 
 ## Runtime Discovery via the Agent
 
